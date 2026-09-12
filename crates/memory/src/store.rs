@@ -189,7 +189,10 @@ impl MemoryStore {
     }
 
     pub fn count(&self, table: &str) -> Result<i64> {
-        let allowed = ["pages", "page_versions", "chunks", "chunk_vectors_raw", "memories", "agent_actions", "visits", "entities", "edges"];
+        let allowed = [
+            "profiles", "tasks", "pages", "page_versions", "chunks", "chunk_vectors_raw", "memories", "visits", "entities", "edges",
+            "agent_sessions", "agent_steps", "agent_actions", "approvals", "grants", "policy_decisions", "model_calls",
+        ];
         if !allowed.contains(&table) {
             return Err(rusqlite::Error::InvalidQuery.into());
         }

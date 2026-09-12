@@ -58,6 +58,18 @@ dependencies = [
 [[package]]
 name = "browse-desktop"
 version = "0.1.0"
+dependencies = [
+ "agent-runtime",
+ "async-trait",
+ "core-types",
+ "engine-adapter",
+ "memory",
+ "model-gateway",
+ "page-intelligence",
+ "policy",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "bumpalo"

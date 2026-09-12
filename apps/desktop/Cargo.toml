@@ -3,4 +3,26 @@ name = "browse-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Desktop binary: wires Shell ↔ Engine ↔ Page Intelligence ↔ Memory ↔ Agent Runtime ↔ Model Gateway ↔ Policy"
+
+[[bin]]
+name = "browse-desktop"
+path = "src/main.rs"
+
+[features]
+default = []
+# Real Chromium backend (engine-cef crate). Not part of increment I0; the
+# binary falls back to the mock engine when the feature is off.
+cef = []
+
 [dependencies]
+core-types = { path = "../../crates/core-types" }
+policy = { path = "../../crates/policy" }
+engine-adapter = { path = "../../crates/engine-adapter" }
+page-intelligence = { path = "../../crates/page-intelligence" }
+memory = { path = "../../crates/memory" }
+model-gateway = { path = "../../crates/model-gateway" }
+agent-runtime = { path = "../../crates/agent-runtime" }
+serde_json.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
