@@ -125,7 +125,7 @@ async fn model_literal_text_is_denied_and_deny_is_final() {
     assert!(matches!(out, StepOutcome::Acted { .. }), "{out:?}");
     assert_eq!(s.consecutive_denies, 0);
     assert_eq!(executed_actions(&h.journal), vec![("type".to_string(), false), ("type".to_string(), true)]);
-    assert_eq!(s.history[0].outcome.contains("denied"), true);
+    assert!(s.history[0].outcome.contains("denied"));
 }
 
 #[tokio::test]

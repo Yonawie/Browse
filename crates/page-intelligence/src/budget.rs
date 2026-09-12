@@ -26,6 +26,7 @@ pub fn estimate_tokens(obs: &Observation) -> u32 {
 /// 1. interactive elements outside the viewport (furthest first),
 /// 2. content chunks beyond `max_content_chunks` (later chunks first),
 /// 3. remaining interactive elements beyond `max_interactive`.
+///
 /// Hidden-text signals and site tools are never trimmed (they are small and
 /// security-relevant).
 pub fn trim_observation(obs: &mut Observation, budget: ObservationBudget) {

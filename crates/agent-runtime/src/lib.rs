@@ -109,6 +109,10 @@ pub struct Session {
     pub started_at: i64,
 }
 
+/// Resolves `$mem:<id>` references to `(text, sensitivity)`.
+pub type MemoryLookup = Arc<dyn Fn(&str) -> Option<(String, Sensitivity)> + Send + Sync>;
+pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
+
 pub struct AgentRunner {
     engine: Arc<dyn EngineAdapter>,
     policy: PolicyEngine,
@@ -117,8 +121,8 @@ pub struct AgentRunner {
     critic: Arc<dyn Critic>,
     confirmer: Arc<dyn ConfirmationHandler>,
     journal: Arc<dyn Journal>,
-    memory_lookup: Arc<dyn Fn(&str) -> Option<(String, Sensitivity)> + Send + Sync>,
-    now: Arc<dyn Fn() -> i64 + Send + Sync>,
+    memory_lookup: MemoryLookup,
+    now: Clock,
     /// Planner is denied more than this many times in a row → the session stops.
     pub max_consecutive_denies: u32,
 }
@@ -147,12 +151,12 @@ impl AgentRunner {
         }
     }
 
-    pub fn with_memory_lookup(mut self, f: Arc<dyn Fn(&str) -> Option<(String, Sensitivity)> + Send + Sync>) -> Self {
+    pub fn with_memory_lookup(mut self, f: MemoryLookup) -> Self {
         self.memory_lookup = f;
         self
     }
 
-    pub fn with_clock(mut self, f: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
+    pub fn with_clock(mut self, f: Clock) -> Self {
         self.now = f;
         self
     }

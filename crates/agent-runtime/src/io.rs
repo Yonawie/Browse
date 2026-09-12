@@ -67,6 +67,7 @@ impl ConfirmationHandler for ScriptedConfirmations {
 /// `agent_steps`, `agent_actions`, `approvals`, `policy_decisions`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum JournalEvent {
     SessionStarted { session_id: String, request: String, scope: TaskScope, dry_run: bool },
     Step { session_id: String, ordinal: u32, observation_hash: String, observation_tokens: u32, thought: Option<String> },

@@ -6,17 +6,10 @@ use core_types::{ContentChunk, ElementRef, ElementState, InteractiveElement, Pag
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-#[derive(Default)]
 struct WebViewState {
     profile: ProfileKind,
     url: String,
     imported_origins: Vec<Origin>,
-}
-
-impl Default for ProfileKind {
-    fn default() -> Self {
-        ProfileKind::User
-    }
 }
 
 /// A page the mock can serve.
