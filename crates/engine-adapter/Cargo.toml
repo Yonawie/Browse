@@ -1,6 +1,16 @@
 [package]
 name = "engine-adapter"
+description = "Engine-agnostic interface to the rendering engine (CEF/Chromium, WKWebView, remote CDP) plus a scriptable mock for tests."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+
 [dependencies]
+core-types = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
