@@ -3,4 +3,14 @@ name = "model-gateway"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Model Gateway: provider abstraction, sensitivity-aware routing, VRAM budget manager"
+
 [dependencies]
+core-types = { path = "../core-types" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
