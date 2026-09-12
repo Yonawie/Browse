@@ -62,4 +62,5 @@ pub const DEFAULT_PRIVATE_DOMAINS: &[&str] = &[
     "myhealth.example",
 ];
 
-pub const DEFAULT_NEVER_REMEMBER: &[&str] = &["paypal.com", "stripe.com", "wise.com", "revolut.com", "chase.com", "bankofamerica.com"];
+pub const DEFAULT_NEVER_REMEMBER: &[&str] =
+    &["paypal.com", "stripe.com", "wise.com", "revolut.com", "chase.com", "bankofamerica.com"];

@@ -29,7 +29,14 @@ impl MockPage {
             url: url.into(),
             title: title.into(),
             interactive: vec![],
-            content: vec![ContentChunk { obs_id: "c0".into(), heading_path: None, text: text.into(), char_start: 0, char_end: text.chars().count() as u32, suspect_injection: false }],
+            content: vec![ContentChunk {
+                obs_id: "c0".into(),
+                heading_path: None,
+                text: text.into(),
+                char_start: 0,
+                char_end: text.chars().count() as u32,
+                suspect_injection: false,
+            }],
             hidden_text_signals: vec![],
             sensitivity: Sensitivity::Public,
         }
@@ -74,7 +81,13 @@ impl Default for MockEngine {
 
 impl MockEngine {
     pub fn new() -> Self {
-        Self { pages: Mutex::new(HashMap::new()), webviews: Mutex::new(HashMap::new()), actions: Mutex::new(vec![]), events: Mutex::new(vec![]), counter: Mutex::new(0) }
+        Self {
+            pages: Mutex::new(HashMap::new()),
+            webviews: Mutex::new(HashMap::new()),
+            actions: Mutex::new(vec![]),
+            events: Mutex::new(vec![]),
+            counter: Mutex::new(0),
+        }
     }
 
     pub fn add_page(&self, page: MockPage) {
@@ -96,7 +109,10 @@ impl EngineAdapter for MockEngine {
         let mut c = self.counter.lock().unwrap();
         *c += 1;
         let id = format!("wv-{}", *c);
-        self.webviews.lock().unwrap().insert(id.clone(), WebViewState { profile: opts.profile, url: "about:blank".into(), imported_origins: vec![] });
+        self.webviews.lock().unwrap().insert(
+            id.clone(),
+            WebViewState { profile: opts.profile, url: "about:blank".into(), imported_origins: vec![] },
+        );
         Ok(id)
     }
 
@@ -119,10 +135,18 @@ impl EngineAdapter for MockEngine {
     }
 
     async fn observe(&self, webview: &Id) -> Result<Observation> {
-        let url = self.webviews.lock().unwrap().get(webview).ok_or_else(|| EngineError::NoSuchWebView(webview.clone()))?.url.clone();
+        let url = self
+            .webviews
+            .lock()
+            .unwrap()
+            .get(webview)
+            .ok_or_else(|| EngineError::NoSuchWebView(webview.clone()))?
+            .url
+            .clone();
         let page = self.page_for(&url).ok_or_else(|| EngineError::Navigation(format!("no page at {url}")))?;
         let origin = Origin::parse(&url).map_err(|e| EngineError::Backend(e.to_string()))?;
-        let serialized = format!("{}|{}|{}", url, page.title, page.content.iter().map(|c| c.text.as_str()).collect::<String>());
+        let serialized =
+            format!("{}|{}|{}", url, page.title, page.content.iter().map(|c| c.text.as_str()).collect::<String>());
         Ok(Observation {
             page: PageMeta {
                 url: url.clone(),
@@ -146,8 +170,19 @@ impl EngineAdapter for MockEngine {
     }
 
     async fn act(&self, webview: &Id, action: Action) -> Result<ActionResult> {
-        let url = self.webviews.lock().unwrap().get(webview).ok_or_else(|| EngineError::NoSuchWebView(webview.clone()))?.url.clone();
-        if let Action::Click { target } | Action::Type { target, .. } | Action::Select { target, .. } | Action::Check { target, .. } = &action {
+        let url = self
+            .webviews
+            .lock()
+            .unwrap()
+            .get(webview)
+            .ok_or_else(|| EngineError::NoSuchWebView(webview.clone()))?
+            .url
+            .clone();
+        if let Action::Click { target }
+        | Action::Type { target, .. }
+        | Action::Select { target, .. }
+        | Action::Check { target, .. } = &action
+        {
             let page = self.page_for(&url).ok_or_else(|| EngineError::Navigation(url.clone()))?;
             if !page.interactive.iter().any(|e| e.element_ref.id == target.id) {
                 return Err(EngineError::NoSuchElement(target.clone()));
@@ -172,7 +207,15 @@ impl EngineAdapter for MockEngine {
     }
 
     async fn export_session(&self, _user_webview: &Id, origin: &Origin) -> Result<Vec<SessionCookie>> {
-        Ok(vec![SessionCookie { name: "sid".into(), value: "mock".into(), domain: origin.host().into(), path: "/".into(), secure: true, http_only: true, expires: None }])
+        Ok(vec![SessionCookie {
+            name: "sid".into(),
+            value: "mock".into(),
+            domain: origin.host().into(),
+            path: "/".into(),
+            secure: true,
+            http_only: true,
+            expires: None,
+        }])
     }
 
     async fn screenshot(&self, _webview: &Id) -> Result<Vec<u8>> {
@@ -205,15 +248,29 @@ mod tests {
     async fn mock_round_trip_and_profile_guard() {
         let engine = MockEngine::new();
         engine.add_page(MockPage::simple("https://a.example/", "A", "Hello.").with_element(1, "button", "Go"));
-        let user = engine.create_webview(WebViewOptions { profile: ProfileKind::User, inject_sensor: true, observe_iframe_origins: vec![], headless: false }).await.unwrap();
+        let user = engine
+            .create_webview(WebViewOptions {
+                profile: ProfileKind::User,
+                inject_sensor: true,
+                observe_iframe_origins: vec![],
+                headless: false,
+            })
+            .await
+            .unwrap();
         let agent = engine.create_webview(WebViewOptions::agent("s1")).await.unwrap();
         engine.navigate(&agent, "https://a.example/").await.unwrap();
         let obs = engine.observe(&agent).await.unwrap();
         assert!(obs.page.untrusted);
         assert_eq!(obs.interactive.len(), 1);
-        let r = engine.act(&agent, Action::Click { target: ElementRef { id: 1, path: "button/Go/0".into() } }).await.unwrap();
+        let r = engine
+            .act(&agent, Action::Click { target: ElementRef { id: 1, path: "button/Go/0".into() } })
+            .await
+            .unwrap();
         assert!(r.ok);
-        assert!(matches!(engine.act(&agent, Action::Click { target: ElementRef { id: 99, path: String::new() } }).await, Err(EngineError::NoSuchElement(_))));
+        assert!(matches!(
+            engine.act(&agent, Action::Click { target: ElementRef { id: 99, path: String::new() } }).await,
+            Err(EngineError::NoSuchElement(_))
+        ));
         let origin = Origin::parse("https://a.example").unwrap();
         let cookies = engine.export_session(&user, &origin).await.unwrap();
         assert!(matches!(engine.import_session(&user, &origin, cookies.clone()).await, Err(EngineError::Blocked(_))));

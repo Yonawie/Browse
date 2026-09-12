@@ -103,9 +103,8 @@ impl LlamaServerProvider {
         if let Some(err) = v.get("error") {
             return Err(ModelError::Provider { provider: self.name.clone(), message: err.to_string() });
         }
-        let message = v
-            .pointer("/choices/0/message")
-            .ok_or_else(|| ModelError::Protocol("missing choices[0].message".into()))?;
+        let message =
+            v.pointer("/choices/0/message").ok_or_else(|| ModelError::Protocol("missing choices[0].message".into()))?;
         let content = message.get("content").and_then(Value::as_str).unwrap_or("").to_string();
         let tool_calls = message
             .get("tool_calls")
@@ -161,10 +160,8 @@ impl ModelProvider for LlamaServerProvider {
         let model = self.model_for(ModelTier::Embed)?;
         let body = json!({ "model": model, "input": texts, "encoding_format": "float" });
         let v = self.transport.post_json("/v1/embeddings", body).await?;
-        let data = v
-            .get("data")
-            .and_then(Value::as_array)
-            .ok_or_else(|| ModelError::Protocol("missing data[]".into()))?;
+        let data =
+            v.get("data").and_then(Value::as_array).ok_or_else(|| ModelError::Protocol("missing data[]".into()))?;
         let mut out = Vec::with_capacity(data.len());
         for item in data {
             let emb = item
@@ -221,13 +218,14 @@ mod tests {
             "usage": { "prompt_tokens": 120, "completion_tokens": 9 }
         });
         let (p, rec) = provider(reply);
-        let req = ModelRequest::new(ModelTier::Smart, Sensitivity::Public, vec![Message::system("s"), Message::user("u")])
-            .with_tools(vec![ToolSpec {
-                name: "click".into(),
-                description: "Click".into(),
-                parameters: json!({ "type": "object", "properties": { "ref": { "type": "string" } } }),
-            }])
-            .with_schema(json!({ "type": "object" }));
+        let req =
+            ModelRequest::new(ModelTier::Smart, Sensitivity::Public, vec![Message::system("s"), Message::user("u")])
+                .with_tools(vec![ToolSpec {
+                    name: "click".into(),
+                    description: "Click".into(),
+                    parameters: json!({ "type": "object", "properties": { "ref": { "type": "string" } } }),
+                }])
+                .with_schema(json!({ "type": "object" }));
 
         let resp = p.chat(&req).await.unwrap();
         assert_eq!(resp.tool_calls.len(), 1);

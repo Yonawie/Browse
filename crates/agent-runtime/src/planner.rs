@@ -72,7 +72,19 @@ impl ModelPlanner {
         let history = if ctx.history.is_empty() {
             "none".to_string()
         } else {
-            ctx.history.iter().map(|h| format!("{}. {}{} → {}", h.ordinal, h.tool, h.target.as_deref().map(|t| format!(" ({t})")).unwrap_or_default(), h.outcome)).collect::<Vec<_>>().join("\n")
+            ctx.history
+                .iter()
+                .map(|h| {
+                    format!(
+                        "{}. {}{} → {}",
+                        h.ordinal,
+                        h.tool,
+                        h.target.as_deref().map(|t| format!(" ({t})")).unwrap_or_default(),
+                        h.outcome
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         };
         vec![
             Message::system(PLANNER_SYSTEM_PROMPT),
@@ -93,7 +105,11 @@ impl ModelPlanner {
 impl Planner for ModelPlanner {
     async fn plan(&self, ctx: PlanContext<'_>) -> Result<PlanStep, AgentError> {
         let messages = Self::build_messages(&ctx);
-        let tier = if ctx.observation.approx_tokens > 3_000 { core_types::ModelTier::Smart } else { core_types::ModelTier::Fast };
+        let tier = if ctx.observation.approx_tokens > 3_000 {
+            core_types::ModelTier::Smart
+        } else {
+            core_types::ModelTier::Fast
+        };
         let mut req = ModelRequest::new(tier, ctx.sensitivity, messages).with_tools(ctx.tools.to_vec());
         req.cloud_opt_in = ctx.allow_cloud;
         let (resp, _route) = self.router.chat(&req).await?;

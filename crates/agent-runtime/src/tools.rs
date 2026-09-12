@@ -51,9 +51,13 @@ fn free_text_ok(kind: ArgKind) -> ArgAnnotation {
 /// read-only and therefore usable in the `user_readonly` scope profile.
 pub fn builtin_manifests() -> Vec<ToolManifest> {
     vec![
-        ToolManifest::builtin("navigate", "Open a URL in the agent tab. Only https origins inside the task scope.", false)
-            .with_arg("url", model_ok(ArgKind::Url))
-            .with_consequential_when(vec![ConsequentialPredicate::NavigatesToCheckoutLikeUrl]),
+        ToolManifest::builtin(
+            "navigate",
+            "Open a URL in the agent tab. Only https origins inside the task scope.",
+            false,
+        )
+        .with_arg("url", model_ok(ArgKind::Url))
+        .with_consequential_when(vec![ConsequentialPredicate::NavigatesToCheckoutLikeUrl]),
         ToolManifest::builtin("click", "Click an interactive element by its `ref` from the observation.", false)
             .with_arg("ref", model_ok(ArgKind::Ref))
             .with_consequential_when(vec![
@@ -69,15 +73,22 @@ pub fn builtin_manifests() -> Vec<ToolManifest> {
         .with_arg("ref", model_ok(ArgKind::Ref))
         .with_arg("text", ann(ArgKind::FreeText))
         .with_arg("submit", model_ok(ArgKind::Enum))
-        .with_consequential_when(vec![ConsequentialPredicate::TargetIsSubmit, ConsequentialPredicate::FormHasPaymentFields]),
+        .with_consequential_when(vec![
+            ConsequentialPredicate::TargetIsSubmit,
+            ConsequentialPredicate::FormHasPaymentFields,
+        ]),
         ToolManifest::builtin("select", "Choose an option in a <select> by visible label.", false)
             .with_arg("ref", model_ok(ArgKind::Ref))
             .with_arg("value", free_text_ok(ArgKind::Enum)),
         ToolManifest::builtin("scroll", "Scroll the page or an element.", true)
             .with_arg("ref", model_ok(ArgKind::Ref))
             .with_arg("delta_y", model_ok(ArgKind::Number)),
-        ToolManifest::builtin("read_more", "Read the full text of a content chunk beyond the observation budget.", true)
-            .with_arg("obs_id", model_ok(ArgKind::ObsId)),
+        ToolManifest::builtin(
+            "read_more",
+            "Read the full text of a content chunk beyond the observation budget.",
+            true,
+        )
+        .with_arg("obs_id", model_ok(ArgKind::ObsId)),
         ToolManifest::builtin("extract", "Return the text of the given content chunks as the task result.", true)
             .with_arg("obs_ids", model_ok(ArgKind::ObsId)),
         ToolManifest::builtin("search_memory", "Hybrid search over the user's browsing memory (local only).", true)
@@ -218,7 +229,11 @@ pub fn label_call(
 
 fn resolve_reference(reference: &str, ctx: &ResolveContext<'_>) -> Result<LabeledValue, AgentError> {
     if reference == "$user" {
-        return Ok(LabeledValue { value: json!(ctx.user_request), provenance: Provenance::User, sensitivity: ctx.user_request_sensitivity });
+        return Ok(LabeledValue {
+            value: json!(ctx.user_request),
+            provenance: Provenance::User,
+            sensitivity: ctx.user_request_sensitivity,
+        });
     }
     if let Some(obs_id) = reference.strip_prefix("$obs:") {
         let chunk = ctx
@@ -234,12 +249,22 @@ fn resolve_reference(reference: &str, ctx: &ResolveContext<'_>) -> Result<Labele
         ));
     }
     if let Some(id) = reference.strip_prefix("$mem:") {
-        let (text, sens) = (ctx.memory_lookup)(id).ok_or_else(|| AgentError::BadToolArgs(format!("unknown memory `{id}`")))?;
-        return Ok(LabeledValue { value: json!(text), provenance: Provenance::Memory { id: id.to_string() }, sensitivity: sens });
+        let (text, sens) =
+            (ctx.memory_lookup)(id).ok_or_else(|| AgentError::BadToolArgs(format!("unknown memory `{id}`")))?;
+        return Ok(LabeledValue {
+            value: json!(text),
+            provenance: Provenance::Memory { id: id.to_string() },
+            sensitivity: sens,
+        });
     }
     if let Some(call_id) = reference.strip_prefix("$result:") {
-        let prior = ctx.results.get(call_id).ok_or_else(|| AgentError::BadToolArgs(format!("unknown result `{call_id}`")))?;
-        return Ok(LabeledValue { value: json!(flatten_text(&prior.value)), provenance: prior.provenance.clone(), sensitivity: prior.sensitivity });
+        let prior =
+            ctx.results.get(call_id).ok_or_else(|| AgentError::BadToolArgs(format!("unknown result `{call_id}`")))?;
+        return Ok(LabeledValue {
+            value: json!(flatten_text(&prior.value)),
+            provenance: prior.provenance.clone(),
+            sensitivity: prior.sensitivity,
+        });
     }
     Err(AgentError::BadToolArgs(format!("unknown reference `{reference}`")))
 }
@@ -370,7 +395,14 @@ mod tests {
                     consequential_hint: false,
                 },
             ],
-            content: vec![ContentChunk { obs_id: "c1".into(), heading_path: None, text: "SAVE10".into(), char_start: 0, char_end: 6, suspect_injection: false }],
+            content: vec![ContentChunk {
+                obs_id: "c1".into(),
+                heading_path: None,
+                text: "SAVE10".into(),
+                char_start: 0,
+                char_end: 6,
+                suspect_injection: false,
+            }],
             tools: vec![],
             hidden_text_signals: vec![],
             approx_tokens: 10,
@@ -412,7 +444,10 @@ mod tests {
         let call = label_call("4", "type", &json!({ "ref": 7, "text": "literal from model" }), m, &c).unwrap();
         assert_eq!(call.args["text"].provenance, Provenance::Model);
 
-        assert!(matches!(label_call("5", "type", &json!({ "ref": 7, "text": "$obs:nope" }), m, &c), Err(AgentError::BadToolArgs(_))));
+        assert!(matches!(
+            label_call("5", "type", &json!({ "ref": 7, "text": "$obs:nope" }), m, &c),
+            Err(AgentError::BadToolArgs(_))
+        ));
     }
 
     #[test]
@@ -422,8 +457,14 @@ mod tests {
         let c = ctx(&o, &lookup);
         let reg = ToolRegistry::builtin();
         let m = reg.get("type").unwrap();
-        assert!(matches!(label_call("1", "type", &json!({ "ref": 8, "text": "$user" }), m, &c), Err(AgentError::MaskedField(8))));
-        assert!(matches!(label_call("2", "click", &json!({ "ref": 99 }), reg.get("click").unwrap(), &c), Err(AgentError::UnknownRef(99))));
+        assert!(matches!(
+            label_call("1", "type", &json!({ "ref": 8, "text": "$user" }), m, &c),
+            Err(AgentError::MaskedField(8))
+        ));
+        assert!(matches!(
+            label_call("2", "click", &json!({ "ref": 99 }), reg.get("click").unwrap(), &c),
+            Err(AgentError::UnknownRef(99))
+        ));
     }
 
     #[test]
@@ -432,7 +473,14 @@ mod tests {
         let lookup = |_: &str| None;
         let c = ctx(&o, &lookup);
         let reg = ToolRegistry::builtin();
-        let call = label_call("1", "type", &json!({ "ref": 7, "text": "$user", "submit": true }), reg.get("type").unwrap(), &c).unwrap();
+        let call = label_call(
+            "1",
+            "type",
+            &json!({ "ref": 7, "text": "$user", "submit": true }),
+            reg.get("type").unwrap(),
+            &c,
+        )
+        .unwrap();
         match to_action(&call, &o).unwrap().unwrap() {
             Action::Type { target, text, submit } => {
                 assert_eq!(target.id, 7);

@@ -40,12 +40,27 @@ fn verdict_reason(v: &Verdict) -> Option<&str> {
 }
 
 impl MemoryStore {
-    pub fn start_session(&self, profile_id: &str, task_id: Option<&str>, request: &str, scope: &TaskScope, dry_run: bool) -> Result<String> {
+    pub fn start_session(
+        &self,
+        profile_id: &str,
+        task_id: Option<&str>,
+        request: &str,
+        scope: &TaskScope,
+        dry_run: bool,
+    ) -> Result<String> {
         let id = new_id();
         self.conn().execute(
             "INSERT INTO agent_sessions(id, task_id, profile_id, request, scope_json, mode, status, started_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'planning', ?7)",
-            params![id, task_id, profile_id, request, serde_json::to_string(scope)?, if dry_run { "dry_run" } else { "live" }, now_ms()],
+            params![
+                id,
+                task_id,
+                profile_id,
+                request,
+                serde_json::to_string(scope)?,
+                if dry_run { "dry_run" } else { "live" },
+                now_ms()
+            ],
         )?;
         Ok(id)
     }
@@ -59,7 +74,14 @@ impl MemoryStore {
         Ok(())
     }
 
-    pub fn add_step(&self, session_id: &str, ordinal: u32, observation_hash: Option<&str>, observation_tokens: Option<u32>, thought: Option<&str>) -> Result<String> {
+    pub fn add_step(
+        &self,
+        session_id: &str,
+        ordinal: u32,
+        observation_hash: Option<&str>,
+        observation_tokens: Option<u32>,
+        thought: Option<&str>,
+    ) -> Result<String> {
         let id = new_id();
         self.conn().execute(
             "INSERT INTO agent_steps(id, session_id, ordinal, observation_hash, observation_tokens, thought, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -131,7 +153,9 @@ mod tests {
         let scope = TaskScope::new(["https://a.example"], ["click"]);
         let sid = s.start_session("agent", None, "do it", &scope, false).unwrap();
         let step = s.add_step(&sid, 0, Some("h"), Some(1200), None).unwrap();
-        let call = ToolCall::new("c1", "click").on(Origin::parse("https://a.example").unwrap()).arg("ref", LabeledValue::user(1));
+        let call = ToolCall::new("c1", "click")
+            .on(Origin::parse("https://a.example").unwrap())
+            .arg("ref", LabeledValue::user(1));
         let entry = JournalEntry {
             session_id: sid.clone(),
             step_id: step,

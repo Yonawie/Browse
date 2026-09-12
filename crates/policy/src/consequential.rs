@@ -7,20 +7,89 @@ use core_types::{ConsequentialPredicate, ToolCall, ToolManifest};
 /// Matching is case-insensitive on the accessible name of the target.
 pub const CONSEQUENTIAL_LEXICON: &[&str] = &[
     // en
-    "pay", "buy", "purchase", "place order", "checkout", "check out", "confirm order", "send", "submit", "delete",
-    "remove", "publish", "post", "transfer", "book", "reserve", "subscribe", "unsubscribe", "cancel subscription",
-    "accept offer", "sign", "approve", "merge", "deploy", "upload",
+    "pay",
+    "buy",
+    "purchase",
+    "place order",
+    "checkout",
+    "check out",
+    "confirm order",
+    "send",
+    "submit",
+    "delete",
+    "remove",
+    "publish",
+    "post",
+    "transfer",
+    "book",
+    "reserve",
+    "subscribe",
+    "unsubscribe",
+    "cancel subscription",
+    "accept offer",
+    "sign",
+    "approve",
+    "merge",
+    "deploy",
+    "upload",
     // ru
-    "оплатить", "купить", "оформить заказ", "заказать", "подтвердить заказ", "отправить", "удалить", "опубликовать",
-    "перевести", "забронировать", "подписаться", "отписаться", "подписать", "одобрить", "загрузить",
+    "оплатить",
+    "купить",
+    "оформить заказ",
+    "заказать",
+    "подтвердить заказ",
+    "отправить",
+    "удалить",
+    "опубликовать",
+    "перевести",
+    "забронировать",
+    "подписаться",
+    "отписаться",
+    "подписать",
+    "одобрить",
+    "загрузить",
     // de
-    "kaufen", "bezahlen", "bestellen", "senden", "löschen", "veröffentlichen", "überweisen", "buchen",
+    "kaufen",
+    "bezahlen",
+    "bestellen",
+    "senden",
+    "löschen",
+    "veröffentlichen",
+    "überweisen",
+    "buchen",
     // fr
-    "acheter", "payer", "commander", "envoyer", "supprimer", "publier", "virer", "réserver",
+    "acheter",
+    "payer",
+    "commander",
+    "envoyer",
+    "supprimer",
+    "publier",
+    "virer",
+    "réserver",
     // es
-    "comprar", "pagar", "pedir", "enviar", "eliminar", "borrar", "publicar", "transferir", "reservar",
+    "comprar",
+    "pagar",
+    "pedir",
+    "enviar",
+    "eliminar",
+    "borrar",
+    "publicar",
+    "transferir",
+    "reservar",
     // he / ar / zh / ja (common forms)
-    "שלח", "מחק", "קנה", "شراء", "إرسال", "حذف", "购买", "付款", "发送", "删除", "購入", "送信", "削除",
+    "שלח",
+    "מחק",
+    "קנה",
+    "شراء",
+    "إرسال",
+    "حذف",
+    "购买",
+    "付款",
+    "发送",
+    "删除",
+    "購入",
+    "送信",
+    "削除",
 ];
 
 /// Words that indicate the action is *not* consequential even if a lexicon
@@ -41,7 +110,10 @@ pub fn name_matches_lexicon(name: &str) -> bool {
     }
     CONSEQUENTIAL_LEXICON.iter().any(|w| {
         // whole-word-ish match: the label starts with the verb or contains it delimited by spaces
-        lower == *w || lower.starts_with(&format!("{w} ")) || lower.contains(&format!(" {w} ")) || lower.ends_with(&format!(" {w}"))
+        lower == *w
+            || lower.starts_with(&format!("{w} "))
+            || lower.contains(&format!(" {w} "))
+            || lower.ends_with(&format!(" {w}"))
     })
 }
 
@@ -51,7 +123,10 @@ pub fn looks_like_payment(call: &ToolCall) -> bool {
             return true;
         }
         let n = t.name.to_lowercase();
-        if ["pay", "оплат", "checkout", "bezahlen", "payer", "pagar", "付款", "purchase", "buy now", "купить"].iter().any(|w| n.contains(w)) {
+        if ["pay", "оплат", "checkout", "bezahlen", "payer", "pagar", "付款", "purchase", "buy now", "купить"]
+            .iter()
+            .any(|w| n.contains(w))
+        {
             return true;
         }
         if let Some(h) = &t.href {
@@ -76,10 +151,7 @@ pub fn is_consequential(call: &ToolCall, manifest: &ToolManifest) -> bool {
         return true;
     }
     let Some(target) = &call.target else {
-        return manifest
-            .safety
-            .consequential_when
-            .contains(&ConsequentialPredicate::NavigatesToCheckoutLikeUrl)
+        return manifest.safety.consequential_when.contains(&ConsequentialPredicate::NavigatesToCheckoutLikeUrl)
             && looks_like_payment(call);
     };
     if target.site_tool_consequential_hint {
@@ -93,7 +165,9 @@ pub fn is_consequential(call: &ToolCall, manifest: &ToolManifest) -> bool {
         ConsequentialPredicate::NavigatesToCheckoutLikeUrl => looks_like_payment(call),
         ConsequentialPredicate::DeletesOrPublishes => {
             let n = target.name.to_lowercase();
-            ["delete", "remove", "publish", "удал", "опублик", "löschen", "supprimer", "eliminar", "删除", "削除"].iter().any(|w| n.contains(w))
+            ["delete", "remove", "publish", "удал", "опублик", "löschen", "supprimer", "eliminar", "删除", "削除"]
+                .iter()
+                .any(|w| n.contains(w))
         }
     })
 }
@@ -104,7 +178,17 @@ mod tests {
 
     #[test]
     fn lexicon_matches_multilingual_labels() {
-        for label in ["Pay now", "Оплатить", "Place order", "Опубликовать запись", "Bestellen", "Envoyer", "购买", "Delete", "Sign"] {
+        for label in [
+            "Pay now",
+            "Оплатить",
+            "Place order",
+            "Опубликовать запись",
+            "Bestellen",
+            "Envoyer",
+            "购买",
+            "Delete",
+            "Sign",
+        ] {
             assert!(name_matches_lexicon(label), "{label}");
         }
         for label in ["Next", "Далее", "Learn more about sending", "Как оплатить", "FAQ", "Search"] {

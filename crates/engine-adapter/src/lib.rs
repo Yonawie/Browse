@@ -60,7 +60,12 @@ pub struct WebViewOptions {
 
 impl WebViewOptions {
     pub fn agent(session_id: &str) -> Self {
-        Self { profile: ProfileKind::Agent { session_id: session_id.into() }, inject_sensor: true, observe_iframe_origins: vec![], headless: false }
+        Self {
+            profile: ProfileKind::Agent { session_id: session_id.into() },
+            inject_sensor: true,
+            observe_iframe_origins: vec![],
+            headless: false,
+        }
     }
 }
 
@@ -69,22 +74,48 @@ impl WebViewOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Action {
-    Navigate { url: String },
+    Navigate {
+        url: String,
+    },
     Back,
     Forward,
     Reload,
-    Click { target: ElementRef },
+    Click {
+        target: ElementRef,
+    },
     /// Replaces the field's value. Never used for masked fields.
-    Type { target: ElementRef, text: String, submit: bool },
-    Select { target: ElementRef, value: String },
-    Check { target: ElementRef, checked: bool },
-    Scroll { target: Option<ElementRef>, delta_y: i32 },
-    PressKey { key: String },
+    Type {
+        target: ElementRef,
+        text: String,
+        submit: bool,
+    },
+    Select {
+        target: ElementRef,
+        value: String,
+    },
+    Check {
+        target: ElementRef,
+        checked: bool,
+    },
+    Scroll {
+        target: Option<ElementRef>,
+        delta_y: i32,
+    },
+    PressKey {
+        key: String,
+    },
     /// Read more of a content chunk beyond the observation budget.
-    ReadMore { obs_id: Id },
+    ReadMore {
+        obs_id: Id,
+    },
     /// Invoke a WebMCP tool exposed by the site.
-    CallSiteTool { name: String, args: serde_json::Value },
-    WaitForIdle { timeout_ms: u64 },
+    CallSiteTool {
+        name: String,
+        args: serde_json::Value,
+    },
+    WaitForIdle {
+        timeout_ms: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,18 +133,41 @@ pub struct ActionResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum EngineEvent {
-    NavigationStarted { webview: Id, url: String },
-    Loaded { webview: Id, url: String, title: String },
+    NavigationStarted {
+        webview: Id,
+        url: String,
+    },
+    Loaded {
+        webview: Id,
+        url: String,
+        title: String,
+    },
     /// The sensor observed a meaningful mutation (debounced, idle-time only).
-    Mutated { webview: Id, snapshot_hash: String },
+    Mutated {
+        webview: Id,
+        snapshot_hash: String,
+    },
     /// A request was observed (Chromium backends only). Bodies are never
     /// forwarded; headers are redacted of `Authorization`/`Cookie`.
-    Request { webview: Id, method: String, url: String, status: Option<u16> },
-    Console { webview: Id, level: String, text: String },
-    Closed { webview: Id },
+    Request {
+        webview: Id,
+        method: String,
+        url: String,
+        status: Option<u16>,
+    },
+    Console {
+        webview: Id,
+        level: String,
+        text: String,
+    },
+    Closed {
+        webview: Id,
+    },
     /// The engine detected a CAPTCHA / anti-bot interstitial; the runtime
     /// must hand control back to the user.
-    HumanChallenge { webview: Id },
+    HumanChallenge {
+        webview: Id,
+    },
 }
 
 /// Cookie subset needed for one-origin session import (ADR-005 §1).
@@ -171,6 +225,20 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
-    pub const CHROMIUM: Capabilities = Capabilities { accessibility_tree: true, network_events: true, trusted_input_events: true, isolated_profiles: true, webextensions: true, screenshots: true };
-    pub const WKWEBVIEW: Capabilities = Capabilities { accessibility_tree: false, network_events: false, trusted_input_events: false, isolated_profiles: true, webextensions: false, screenshots: true };
+    pub const CHROMIUM: Capabilities = Capabilities {
+        accessibility_tree: true,
+        network_events: true,
+        trusted_input_events: true,
+        isolated_profiles: true,
+        webextensions: true,
+        screenshots: true,
+    };
+    pub const WKWEBVIEW: Capabilities = Capabilities {
+        accessibility_tree: false,
+        network_events: false,
+        trusted_input_events: false,
+        isolated_profiles: true,
+        webextensions: false,
+        screenshots: true,
+    };
 }

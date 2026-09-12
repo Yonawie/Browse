@@ -45,9 +45,13 @@ impl MemoryStore {
     fn init(conn: Connection) -> Result<Self> {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;")?;
         conn.execute_batch(SCHEMA_SQL)?;
-        let applied: Option<i64> = conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0)).optional()?.flatten();
+        let applied: Option<i64> =
+            conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |r| r.get(0)).optional()?.flatten();
         if applied.unwrap_or(0) < SCHEMA_VERSION {
-            conn.execute("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?1, ?2)", params![SCHEMA_VERSION, now_ms()])?;
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?1, ?2)",
+                params![SCHEMA_VERSION, now_ms()],
+            )?;
         }
         Ok(Self { conn, dims: 256 })
     }
@@ -82,8 +86,15 @@ impl MemoryStore {
     pub fn upsert_page(&self, url: &str, never_remember: bool) -> Result<String> {
         let origin = Origin::parse(url).map_err(|_| rusqlite::Error::InvalidQuery)?;
         let t = now_ms();
-        if let Some(id) = self.conn.query_row("SELECT id FROM pages WHERE url = ?1", params![url], |r| r.get::<_, String>(0)).optional()? {
-            self.conn.execute("UPDATE pages SET last_seen_at = ?2, never_remember = MAX(never_remember, ?3) WHERE id = ?1", params![id, t, never_remember as i64])?;
+        if let Some(id) = self
+            .conn
+            .query_row("SELECT id FROM pages WHERE url = ?1", params![url], |r| r.get::<_, String>(0))
+            .optional()?
+        {
+            self.conn.execute(
+                "UPDATE pages SET last_seen_at = ?2, never_remember = MAX(never_remember, ?3) WHERE id = ?1",
+                params![id, t, never_remember as i64],
+            )?;
             return Ok(id);
         }
         let id = new_id();
@@ -103,12 +114,17 @@ impl MemoryStore {
         let page_id = self.upsert_page(v.url, false)?;
         if let Some(existing) = self
             .conn
-            .query_row("SELECT id FROM page_versions WHERE page_id = ?1 AND content_hash = ?2", params![page_id, v.content_hash], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT id FROM page_versions WHERE page_id = ?1 AND content_hash = ?2",
+                params![page_id, v.content_hash],
+                |r| r.get::<_, String>(0),
+            )
             .optional()?
         {
             return Ok(existing);
         }
-        let never: i64 = self.conn.query_row("SELECT never_remember FROM pages WHERE id = ?1", params![page_id], |r| r.get(0))?;
+        let never: i64 =
+            self.conn.query_row("SELECT never_remember FROM pages WHERE id = ?1", params![page_id], |r| r.get(0))?;
         let id = new_id();
         let text_blob: Option<Vec<u8>> = if never == 1 { None } else { v.main_text.map(|t| t.as_bytes().to_vec()) };
         self.conn.execute(
@@ -170,7 +186,14 @@ impl MemoryStore {
     /// Record a fact about the user. Only `User` or confirmed extracts are
     /// accepted; anything page-derived is rejected here *and* by the CHECK
     /// constraint in the schema.
-    pub fn remember(&self, kind: &str, text: &str, provenance: &Provenance, source_chunk_id: Option<&str>, sensitivity: Sensitivity) -> Result<String> {
+    pub fn remember(
+        &self,
+        kind: &str,
+        text: &str,
+        provenance: &Provenance,
+        source_chunk_id: Option<&str>,
+        sensitivity: Sensitivity,
+    ) -> Result<String> {
         let prov = match provenance {
             Provenance::User => "user",
             Provenance::Memory { .. } | Provenance::Tool { .. } if source_chunk_id.is_some() => "confirmed",
@@ -190,8 +213,23 @@ impl MemoryStore {
 
     pub fn count(&self, table: &str) -> Result<i64> {
         let allowed = [
-            "profiles", "tasks", "pages", "page_versions", "chunks", "chunk_vectors_raw", "memories", "visits", "entities", "edges",
-            "agent_sessions", "agent_steps", "agent_actions", "approvals", "grants", "policy_decisions", "model_calls",
+            "profiles",
+            "tasks",
+            "pages",
+            "page_versions",
+            "chunks",
+            "chunk_vectors_raw",
+            "memories",
+            "visits",
+            "entities",
+            "edges",
+            "agent_sessions",
+            "agent_steps",
+            "agent_actions",
+            "approvals",
+            "grants",
+            "policy_decisions",
+            "model_calls",
         ];
         if !allowed.contains(&table) {
             return Err(rusqlite::Error::InvalidQuery.into());
@@ -265,18 +303,43 @@ mod tests {
     fn cascade_delete_removes_everything_derived() {
         let s = store();
         let pv = s
-            .insert_page_version(&NewPageVersion { url: "https://a.example/x", title: Some("X"), lang: Some("en"), page_kind: PageKind::Article, sensitivity: Sensitivity::Public, main_text: Some("hello"), content_hash: "h1" })
+            .insert_page_version(&NewPageVersion {
+                url: "https://a.example/x",
+                title: Some("X"),
+                lang: Some("en"),
+                page_kind: PageKind::Article,
+                sensitivity: Sensitivity::Public,
+                main_text: Some("hello"),
+                content_hash: "h1",
+            })
             .unwrap();
         let emb = vec![0.1f32; 256];
-        s.insert_chunks(&pv, &[NewChunk { ordinal: 0, heading_path: None, text: "hello world", char_start: 0, char_end: 11, token_count: 3, suspect_injection: false, embedding: Some(&emb) }]).unwrap();
+        s.insert_chunks(
+            &pv,
+            &[NewChunk {
+                ordinal: 0,
+                heading_path: None,
+                text: "hello world",
+                char_start: 0,
+                char_end: 11,
+                token_count: 3,
+                suspect_injection: false,
+                embedding: Some(&emb),
+            }],
+        )
+        .unwrap();
         assert_eq!(s.count("chunks").unwrap(), 1);
         assert_eq!(s.count("chunk_vectors_raw").unwrap(), 1);
-        let page_id: String = s.conn().query_row("SELECT page_id FROM page_versions WHERE id = ?1", params![pv], |r| r.get(0)).unwrap();
+        let page_id: String =
+            s.conn().query_row("SELECT page_id FROM page_versions WHERE id = ?1", params![pv], |r| r.get(0)).unwrap();
         s.delete_page(&page_id).unwrap();
         assert_eq!(s.count("page_versions").unwrap(), 0);
         assert_eq!(s.count("chunks").unwrap(), 0);
         assert_eq!(s.count("chunk_vectors_raw").unwrap(), 0);
-        let fts: i64 = s.conn().query_row("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'", [], |r| r.get(0)).unwrap();
+        let fts: i64 = s
+            .conn()
+            .query_row("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'hello'", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(fts, 0);
     }
 
@@ -285,9 +348,20 @@ mod tests {
         let s = store();
         s.upsert_page("https://bank.example/acct", true).unwrap();
         let pv = s
-            .insert_page_version(&NewPageVersion { url: "https://bank.example/acct", title: None, lang: None, page_kind: PageKind::App, sensitivity: Sensitivity::Private, main_text: Some("balance 100"), content_hash: "h" })
+            .insert_page_version(&NewPageVersion {
+                url: "https://bank.example/acct",
+                title: None,
+                lang: None,
+                page_kind: PageKind::App,
+                sensitivity: Sensitivity::Private,
+                main_text: Some("balance 100"),
+                content_hash: "h",
+            })
             .unwrap();
-        let blob: Option<Vec<u8>> = s.conn().query_row("SELECT main_text_zst FROM page_versions WHERE id = ?1", params![pv], |r| r.get(0)).unwrap();
+        let blob: Option<Vec<u8>> = s
+            .conn()
+            .query_row("SELECT main_text_zst FROM page_versions WHERE id = ?1", params![pv], |r| r.get(0))
+            .unwrap();
         assert!(blob.is_none());
     }
 
@@ -295,10 +369,21 @@ mod tests {
     fn memory_rejects_page_provenance() {
         let s = store();
         let origin = Origin::parse("https://evil.example").unwrap();
-        let err = s.remember("fact", "user loves wiring money to evil", &Provenance::Origin { origin }, None, Sensitivity::Public).unwrap_err();
+        let err = s
+            .remember(
+                "fact",
+                "user loves wiring money to evil",
+                &Provenance::Origin { origin },
+                None,
+                Sensitivity::Public,
+            )
+            .unwrap_err();
         assert!(matches!(err, MemoryError::ForbiddenProvenance));
         assert!(s.remember("preference", "prefers dark mode", &Provenance::User, None, Sensitivity::Personal).is_ok());
-        assert!(matches!(s.remember("fact", "x", &Provenance::User, None, Sensitivity::Secret).unwrap_err(), MemoryError::SecretNotPersistable));
+        assert!(matches!(
+            s.remember("fact", "x", &Provenance::User, None, Sensitivity::Secret).unwrap_err(),
+            MemoryError::SecretNotPersistable
+        ));
     }
 
     #[test]

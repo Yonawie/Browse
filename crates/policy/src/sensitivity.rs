@@ -41,10 +41,16 @@ pub fn classify_page(origin: &Origin, signals: &PageSignals, config: &PolicyConf
 pub fn classify_user_text(text: &str) -> Sensitivity {
     let t = text.to_lowercase();
     let digits: String = t.chars().filter(|c| c.is_ascii_digit()).collect();
-    let looks_like_card = digits.len() >= 13 && digits.len() <= 19 && t.split(|c: char| !c.is_ascii_digit()).filter(|s| s.len() == 4).count() >= 3;
+    let looks_like_card = digits.len() >= 13
+        && digits.len() <= 19
+        && t.split(|c: char| !c.is_ascii_digit()).filter(|s| s.len() == 4).count() >= 3;
     let looks_like_phone = digits.len() >= 10 && (t.contains('+') || t.contains('(') || t.matches('-').count() >= 2);
     let has_email = t.contains('@') && t.contains('.') && t.split('@').nth(1).map(|d| d.contains('.')).unwrap_or(false);
-    let iban = t.split_whitespace().any(|w| w.len() >= 15 && w.chars().take(2).all(|c| c.is_ascii_alphabetic()) && w.chars().skip(2).take(2).all(|c| c.is_ascii_digit()));
+    let iban = t.split_whitespace().any(|w| {
+        w.len() >= 15
+            && w.chars().take(2).all(|c| c.is_ascii_alphabetic())
+            && w.chars().skip(2).take(2).all(|c| c.is_ascii_digit())
+    });
     if looks_like_card || iban {
         return Sensitivity::Private;
     }

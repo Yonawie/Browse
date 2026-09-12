@@ -46,13 +46,21 @@ impl MemoryStore {
                AND (?4 IS NULL OR pv.captured_at <= ?4)
              ORDER BY rank LIMIT ?5",
         )?;
-        let rows = stmt.query_map(params![fts_query, filters.domain, filters.since_ms, filters.until_ms, k as i64], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32)))?;
+        let rows = stmt
+            .query_map(params![fts_query, filters.domain, filters.since_ms, filters.until_ms, k as i64], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)? as f32))
+            })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     /// Brute-force cosine similarity over `chunk_vectors_raw`. With sqlite-vec
     /// enabled this is replaced by a `vec0` KNN query with the same signature.
-    pub fn search_vector(&self, query_embedding: &[f32], filters: &SearchFilters, k: usize) -> Result<Vec<(String, f32)>> {
+    pub fn search_vector(
+        &self,
+        query_embedding: &[f32],
+        filters: &SearchFilters,
+        k: usize,
+    ) -> Result<Vec<(String, f32)>> {
         let mut stmt = self.conn().prepare(
             "SELECT v.chunk_id, v.embedding
              FROM chunk_vectors_raw v JOIN chunks c ON c.id = v.chunk_id
@@ -83,7 +91,13 @@ impl MemoryStore {
 
     /// Hybrid search: reciprocal-rank fusion of lexical and vector results,
     /// deduplicated per page version, enriched with page metadata.
-    pub fn hybrid_search(&self, query: &str, query_embedding: Option<&[f32]>, filters: &SearchFilters, k: usize) -> Result<Vec<SearchHit>> {
+    pub fn hybrid_search(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        filters: &SearchFilters,
+        k: usize,
+    ) -> Result<Vec<SearchHit>> {
         let pool = (k * 5).max(50);
         let lexical = self.search_lexical(query, filters, pool)?;
         let vector = match query_embedding {
@@ -109,7 +123,14 @@ impl MemoryStore {
         )?;
         for (chunk_id, score) in ranked {
             let row = stmt.query_row(params![chunk_id], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                ))
             })?;
             let sensitivity = parse_sensitivity(&row.5);
             if let Some(max) = filters.max_sensitivity {
@@ -120,7 +141,16 @@ impl MemoryStore {
             if !seen_versions.insert(row.0.clone()) {
                 continue;
             }
-            hits.push(SearchHit { chunk_id, page_version_id: row.0, url: row.1, title: row.2, heading_path: row.3, text: row.4, score, sensitivity });
+            hits.push(SearchHit {
+                chunk_id,
+                page_version_id: row.0,
+                url: row.1,
+                title: row.2,
+                heading_path: row.3,
+                text: row.4,
+                score,
+                sensitivity,
+            });
             if hits.len() >= k {
                 break;
             }
@@ -172,13 +202,55 @@ mod tests {
         let mut e2 = vec![0.0f32; 256];
         e2[1] = 1.0;
         let pv1 = s
-            .insert_page_version(&NewPageVersion { url: "https://docs.example/servo", title: Some("Servo embedding"), lang: Some("en"), page_kind: PageKind::Doc, sensitivity: Sensitivity::Public, main_text: None, content_hash: "a" })
+            .insert_page_version(&NewPageVersion {
+                url: "https://docs.example/servo",
+                title: Some("Servo embedding"),
+                lang: Some("en"),
+                page_kind: PageKind::Doc,
+                sensitivity: Sensitivity::Public,
+                main_text: None,
+                content_hash: "a",
+            })
             .unwrap();
-        s.insert_chunks(&pv1, &[NewChunk { ordinal: 0, heading_path: Some("Embedding"), text: "Servo can be embedded as a Rust crate since April 2026.", char_start: 0, char_end: 50, token_count: 12, suspect_injection: false, embedding: Some(&e1) }]).unwrap();
+        s.insert_chunks(
+            &pv1,
+            &[NewChunk {
+                ordinal: 0,
+                heading_path: Some("Embedding"),
+                text: "Servo can be embedded as a Rust crate since April 2026.",
+                char_start: 0,
+                char_end: 50,
+                token_count: 12,
+                suspect_injection: false,
+                embedding: Some(&e1),
+            }],
+        )
+        .unwrap();
         let pv2 = s
-            .insert_page_version(&NewPageVersion { url: "https://mail.example/inbox", title: Some("Inbox"), lang: Some("en"), page_kind: PageKind::App, sensitivity: Sensitivity::Private, main_text: None, content_hash: "b" })
+            .insert_page_version(&NewPageVersion {
+                url: "https://mail.example/inbox",
+                title: Some("Inbox"),
+                lang: Some("en"),
+                page_kind: PageKind::App,
+                sensitivity: Sensitivity::Private,
+                main_text: None,
+                content_hash: "b",
+            })
             .unwrap();
-        s.insert_chunks(&pv2, &[NewChunk { ordinal: 0, heading_path: None, text: "Your Servo conference ticket is attached.", char_start: 0, char_end: 40, token_count: 9, suspect_injection: false, embedding: Some(&e2) }]).unwrap();
+        s.insert_chunks(
+            &pv2,
+            &[NewChunk {
+                ordinal: 0,
+                heading_path: None,
+                text: "Your Servo conference ticket is attached.",
+                char_start: 0,
+                char_end: 40,
+                token_count: 9,
+                suspect_injection: false,
+                embedding: Some(&e2),
+            }],
+        )
+        .unwrap();
         s
     }
 

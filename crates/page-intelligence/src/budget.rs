@@ -13,9 +13,11 @@ pub struct ObservationBudget {
 
 impl ObservationBudget {
     /// Budget for local 4B–8B models.
-    pub const LOCAL: ObservationBudget = ObservationBudget { max_tokens: 4_000, max_interactive: 150, max_content_chunks: 12 };
+    pub const LOCAL: ObservationBudget =
+        ObservationBudget { max_tokens: 4_000, max_interactive: 150, max_content_chunks: 12 };
     /// Budget for cloud planning (only `public` observations).
-    pub const CLOUD: ObservationBudget = ObservationBudget { max_tokens: 12_000, max_interactive: 400, max_content_chunks: 40 };
+    pub const CLOUD: ObservationBudget =
+        ObservationBudget { max_tokens: 12_000, max_interactive: 400, max_content_chunks: 40 };
 }
 
 pub fn estimate_tokens(obs: &Observation) -> u32 {
@@ -95,7 +97,16 @@ mod tests {
                 has_session: false,
             },
             interactive,
-            content: (0..30).map(|i| ContentChunk { obs_id: format!("c{i}"), heading_path: None, text: "lorem ipsum ".repeat(60), char_start: 0, char_end: 0, suspect_injection: false }).collect(),
+            content: (0..30)
+                .map(|i| ContentChunk {
+                    obs_id: format!("c{i}"),
+                    heading_path: None,
+                    text: "lorem ipsum ".repeat(60),
+                    char_start: 0,
+                    char_end: 0,
+                    suspect_injection: false,
+                })
+                .collect(),
             tools: vec![],
             hidden_text_signals: vec!["ignore previous".into()],
             approx_tokens: 0,

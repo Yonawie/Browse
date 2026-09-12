@@ -89,7 +89,10 @@ pub struct TaskScope {
 }
 
 impl TaskScope {
-    pub fn new(origins: impl IntoIterator<Item = impl Into<String>>, tools: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn new(
+        origins: impl IntoIterator<Item = impl Into<String>>,
+        tools: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         Self {
             origins: origins.into_iter().map(Into::into).collect(),
             tools: tools.into_iter().map(Into::into).collect(),
@@ -111,8 +114,6 @@ impl TaskScope {
     }
 
     pub fn flow_preapproved(&self, from: &Origin, to: &Origin) -> bool {
-        self.cross_origin_flows
-            .iter()
-            .any(|f| from.matches_pattern(&f.from) && to.matches_pattern(&f.to))
+        self.cross_origin_flows.iter().any(|f| from.matches_pattern(&f.from) && to.matches_pattern(&f.to))
     }
 }

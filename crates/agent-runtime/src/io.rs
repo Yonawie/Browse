@@ -69,8 +69,19 @@ impl ConfirmationHandler for ScriptedConfirmations {
 #[serde(tag = "event", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum JournalEvent {
-    SessionStarted { session_id: String, request: String, scope: TaskScope, dry_run: bool },
-    Step { session_id: String, ordinal: u32, observation_hash: String, observation_tokens: u32, thought: Option<String> },
+    SessionStarted {
+        session_id: String,
+        request: String,
+        scope: TaskScope,
+        dry_run: bool,
+    },
+    Step {
+        session_id: String,
+        ordinal: u32,
+        observation_hash: String,
+        observation_tokens: u32,
+        thought: Option<String>,
+    },
     Action {
         session_id: String,
         ordinal: u32,
@@ -84,7 +95,11 @@ pub enum JournalEvent {
         before_hash: String,
         after_hash: Option<String>,
     },
-    SessionEnded { session_id: String, status: String, outcome: Option<String> },
+    SessionEnded {
+        session_id: String,
+        status: String,
+        outcome: Option<String>,
+    },
 }
 
 pub trait Journal: Send + Sync {

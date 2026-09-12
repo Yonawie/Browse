@@ -21,7 +21,12 @@ pub struct SqliteJournal {
 impl SqliteJournal {
     pub fn new(store: MemoryStore, profile_id: &str) -> memory::Result<Self> {
         store.ensure_profile(profile_id, "agent", "Agent")?;
-        Ok(Self { store: Mutex::new(store), profile_id: profile_id.into(), sessions: Mutex::default(), steps: Mutex::default() })
+        Ok(Self {
+            store: Mutex::new(store),
+            profile_id: profile_id.into(),
+            sessions: Mutex::default(),
+            steps: Mutex::default(),
+        })
     }
 
     pub fn with_store<T>(&self, f: impl FnOnce(&MemoryStore) -> T) -> T {
@@ -46,16 +51,35 @@ impl SqliteJournal {
     fn record_inner(&self, event: JournalEvent) -> memory::Result<()> {
         match event {
             JournalEvent::SessionStarted { session_id, request, scope, dry_run } => {
-                let db_id = self.store.lock().unwrap().start_session(&self.profile_id, None, &request, &scope, dry_run)?;
+                let db_id =
+                    self.store.lock().unwrap().start_session(&self.profile_id, None, &request, &scope, dry_run)?;
                 self.sessions.lock().unwrap().insert(session_id, db_id.clone());
                 self.store.lock().unwrap().set_session_status(&db_id, "running", None)?;
             }
             JournalEvent::Step { session_id, ordinal, observation_hash, observation_tokens, thought } => {
                 let Some(db) = self.db_session(&session_id) else { return Ok(()) };
-                let id = self.store.lock().unwrap().add_step(&db, ordinal, Some(&observation_hash), Some(observation_tokens), thought.as_deref())?;
+                let id = self.store.lock().unwrap().add_step(
+                    &db,
+                    ordinal,
+                    Some(&observation_hash),
+                    Some(observation_tokens),
+                    thought.as_deref(),
+                )?;
                 self.steps.lock().unwrap().insert((db, ordinal), id);
             }
-            JournalEvent::Action { session_id, ordinal, call, decision, critic, approval, executed, result, error, before_hash, after_hash } => {
+            JournalEvent::Action {
+                session_id,
+                ordinal,
+                call,
+                decision,
+                critic,
+                approval,
+                executed,
+                result,
+                error,
+                before_hash,
+                after_hash,
+            } => {
                 let Some(db) = self.db_session(&session_id) else { return Ok(()) };
                 let step_id = self.step_id(&db, ordinal)?;
                 let approval_id = match approval {

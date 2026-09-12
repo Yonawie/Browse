@@ -68,14 +68,10 @@ impl ModelManager {
 
     /// Register a model. Returns an error if resident models alone exceed the budget.
     pub fn register(&mut self, spec: ModelSpec) -> Result<(), ModelError> {
-        let resident_total: u32 =
-            self.specs.values().filter(|s| s.resident).map(|s| s.vram_mb).sum::<u32>()
-                + if spec.resident { spec.vram_mb } else { 0 };
+        let resident_total: u32 = self.specs.values().filter(|s| s.resident).map(|s| s.vram_mb).sum::<u32>()
+            + if spec.resident { spec.vram_mb } else { 0 };
         if resident_total > self.budget.usable_mb() {
-            return Err(ModelError::OutOfBudget {
-                need_mb: resident_total,
-                available_mb: self.budget.usable_mb(),
-            });
+            return Err(ModelError::OutOfBudget { need_mb: resident_total, available_mb: self.budget.usable_mb() });
         }
         self.specs.insert(spec.id.clone(), spec);
         Ok(())
@@ -116,11 +112,7 @@ impl ModelManager {
     /// Plan loading `id`, evicting least-recently-used non-resident models if
     /// needed. Applies the plan to internal state and returns it.
     pub fn ensure_loaded(&mut self, id: &str) -> Result<LoadPlan, ModelError> {
-        let spec = self
-            .specs
-            .get(id)
-            .cloned()
-            .ok_or_else(|| ModelError::NoRoute(format!("unknown model {id}")))?;
+        let spec = self.specs.get(id).cloned().ok_or_else(|| ModelError::NoRoute(format!("unknown model {id}")))?;
 
         if self.loaded.contains_key(id) {
             self.touch(id);

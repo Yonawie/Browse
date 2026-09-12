@@ -14,8 +14,8 @@ pub use config::PolicyConfig;
 pub use grants::{Grant, GrantKind, GrantStore};
 
 use core_types::{
-    ArgKind, Origin, Provenance, ProvenanceClass, ScopeProfile, Sensitivity, TaskScope, ToolCall, ToolManifest,
-    UnixMs, Verdict,
+    ArgKind, Origin, Provenance, ProvenanceClass, ScopeProfile, Sensitivity, TaskScope, ToolCall, ToolManifest, UnixMs,
+    Verdict,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,10 +36,20 @@ impl Decision {
         Self { verdict: Verdict::Allow, rule: rule.into(), consequential: false, details: vec![] }
     }
     fn confirm(rule: &str, reason: impl Into<String>) -> Self {
-        Self { verdict: Verdict::Confirm { reason: reason.into() }, rule: rule.into(), consequential: false, details: vec![] }
+        Self {
+            verdict: Verdict::Confirm { reason: reason.into() },
+            rule: rule.into(),
+            consequential: false,
+            details: vec![],
+        }
     }
     fn deny(rule: &str, reason: impl Into<String>) -> Self {
-        Self { verdict: Verdict::Deny { reason: reason.into() }, rule: rule.into(), consequential: false, details: vec![] }
+        Self {
+            verdict: Verdict::Deny { reason: reason.into() },
+            rule: rule.into(),
+            consequential: false,
+            details: vec![],
+        }
     }
 }
 
@@ -81,7 +91,8 @@ impl PolicyEngine {
             }
         }
         for tool in &scope.tools {
-            let m = manifests.iter().find(|m| m.name == *tool).ok_or_else(|| format!("unknown tool in scope: {tool}"))?;
+            let m =
+                manifests.iter().find(|m| m.name == *tool).ok_or_else(|| format!("unknown tool in scope: {tool}"))?;
             if scope.profile == ScopeProfile::UserReadonly && !m.safety.read_only {
                 return Err(format!("tool `{tool}` is not read-only but scope profile is user_readonly"));
             }
@@ -127,12 +138,20 @@ impl PolicyEngine {
                 match Origin::parse(url) {
                     Ok(dest) => {
                         if self.is_blocked_url(url, &dest) {
-                            return Decision::deny("url.blocked", format!("navigation to `{url}` is blocked by policy"));
+                            return Decision::deny(
+                                "url.blocked",
+                                format!("navigation to `{url}` is blocked by policy"),
+                            );
                         }
-                        if !ctx.scope.allows_origin(&dest) && !ctx.grants.has(GrantKind::OriginScope, dest.as_str(), ctx.now) {
+                        if !ctx.scope.allows_origin(&dest)
+                            && !ctx.grants.has(GrantKind::OriginScope, dest.as_str(), ctx.now)
+                        {
                             decision = decision_stricter(
                                 decision,
-                                Decision::confirm("scope.navigation_out_of_scope", format!("navigating to `{dest}` outside scope")),
+                                Decision::confirm(
+                                    "scope.navigation_out_of_scope",
+                                    format!("navigating to `{dest}` outside scope"),
+                                ),
                             );
                         }
                     }
@@ -153,17 +172,17 @@ impl PolicyEngine {
                         );
                     }
                     if !ann.allowed_provenance.contains(&ProvenanceClass::Model) && !ann.free_text_ok {
-                        return Decision::deny("args.provenance.model", format!("argument `{name}` cannot come from the model"));
+                        return Decision::deny(
+                            "args.provenance.model",
+                            format!("argument `{name}` cannot come from the model"),
+                        );
                     }
                 }
                 Provenance::Origin { origin } => {
                     let same = call.target_origin.as_ref().map(|t| t == origin).unwrap_or(false);
                     if !same {
                         let to = call.target_origin.clone();
-                        let preapproved = to
-                            .as_ref()
-                            .map(|t| ctx.scope.flow_preapproved(origin, t))
-                            .unwrap_or(false)
+                        let preapproved = to.as_ref().map(|t| ctx.scope.flow_preapproved(origin, t)).unwrap_or(false)
                             || to
                                 .as_ref()
                                 .map(|t| ctx.grants.has(GrantKind::CrossOriginFlow, &format!("{origin}->{t}"), ctx.now))
@@ -184,7 +203,10 @@ impl PolicyEngine {
                     } else if !ann.allowed_provenance.contains(&ProvenanceClass::OriginSame) {
                         decision = decision_stricter(
                             decision,
-                            Decision::confirm("args.provenance.origin_same", format!("argument `{name}` is page-derived")),
+                            Decision::confirm(
+                                "args.provenance.origin_same",
+                                format!("argument `{name}` is page-derived"),
+                            ),
                         );
                     }
                 }
@@ -314,7 +336,12 @@ mod tests {
                 ArgAnnotation {
                     kind: ArgKind::FreeText,
                     free_text_ok: true,
-                    allowed_provenance: vec![ProvenanceClass::User, ProvenanceClass::Memory, ProvenanceClass::Model, ProvenanceClass::OriginSame],
+                    allowed_provenance: vec![
+                        ProvenanceClass::User,
+                        ProvenanceClass::Memory,
+                        ProvenanceClass::Model,
+                        ProvenanceClass::OriginSame,
+                    ],
                     secret_forbidden: true,
                 },
             )
@@ -323,7 +350,12 @@ mod tests {
     fn navigate_manifest() -> ToolManifest {
         ToolManifest::builtin("navigate", "Open a URL", false).with_arg(
             "url",
-            ArgAnnotation { kind: ArgKind::Url, free_text_ok: true, allowed_provenance: vec![ProvenanceClass::User, ProvenanceClass::Model], secret_forbidden: true },
+            ArgAnnotation {
+                kind: ArgKind::Url,
+                free_text_ok: true,
+                allowed_provenance: vec![ProvenanceClass::User, ProvenanceClass::Model],
+                secret_forbidden: true,
+            },
         )
     }
 
@@ -349,7 +381,11 @@ mod tests {
     #[test]
     fn preapproved_flow_is_allowed() {
         let mut scope = TaskScope::new(["https://shop-a.example", "https://sheet.example"], ["type"]);
-        scope.cross_origin_flows.push(core_types::CrossOriginFlow { from: "https://shop-a.example".into(), to: "https://sheet.example".into(), fields: vec![] });
+        scope.cross_origin_flows.push(core_types::CrossOriginFlow {
+            from: "https://shop-a.example".into(),
+            to: "https://sheet.example".into(),
+            fields: vec![],
+        });
         let m = type_manifest();
         let grants = GrantStore::default();
         let call = ToolCall::new("c1", "type")
@@ -365,9 +401,10 @@ mod tests {
         let scope = TaskScope::new(["https://a.example"], ["type"]);
         let m = type_manifest();
         let grants = GrantStore::default();
-        let call = ToolCall::new("c1", "type")
-            .on(o("https://a.example"))
-            .arg("text", LabeledValue { value: "hunter2".into(), provenance: Provenance::User, sensitivity: Sensitivity::Secret });
+        let call = ToolCall::new("c1", "type").on(o("https://a.example")).arg(
+            "text",
+            LabeledValue { value: "hunter2".into(), provenance: Provenance::User, sensitivity: Sensitivity::Secret },
+        );
         let d = PolicyEngine::new(PolicyConfig::default()).check(&call, &ctx(&scope, &m, &grants));
         assert_eq!(d.rule, "args.secret");
         assert!(matches!(d.verdict, Verdict::Deny { .. }));
@@ -380,7 +417,9 @@ mod tests {
         let scope = TaskScope::new(["https://news.example"], ["navigate"]);
         let nav = navigate_manifest();
         let grants = GrantStore::default();
-        let call = ToolCall::new("c1", "navigate").on(o("https://news.example")).arg("url", LabeledValue::model("https://attacker.example/steal"));
+        let call = ToolCall::new("c1", "navigate")
+            .on(o("https://news.example"))
+            .arg("url", LabeledValue::model("https://attacker.example/steal"));
         let d = PolicyEngine::new(PolicyConfig::default()).check(&call, &ctx(&scope, &nav, &grants));
         assert_eq!(d.rule, "scope.navigation_out_of_scope");
 
@@ -395,7 +434,13 @@ mod tests {
         let scope = TaskScope::new(["https://a.example"], ["navigate"]);
         let nav = navigate_manifest();
         let grants = GrantStore::default();
-        for url in ["file:///etc/passwd", "chrome://settings", "http://a.example/", "https://localhost:8080/", "https://192.168.0.1/"] {
+        for url in [
+            "file:///etc/passwd",
+            "chrome://settings",
+            "http://a.example/",
+            "https://localhost:8080/",
+            "https://192.168.0.1/",
+        ] {
             let call = ToolCall::new("c", "navigate").on(o("https://a.example")).arg("url", LabeledValue::user(url));
             let d = PolicyEngine::new(PolicyConfig::default()).check(&call, &ctx(&scope, &nav, &grants));
             assert!(matches!(d.verdict, Verdict::Deny { .. }), "{url} → {d:?}");
@@ -407,8 +452,14 @@ mod tests {
         let scope = TaskScope::new(["https://localhost:3000"], ["navigate"]);
         let nav = navigate_manifest();
         let grants = GrantStore::default();
-        let cfg = PolicyConfig { dev_mode_enabled: true, dev_localhost_origins: vec!["https://localhost:3000".into()], ..Default::default() };
-        let call = ToolCall::new("c", "navigate").on(o("https://localhost:3000")).arg("url", LabeledValue::user("https://localhost:3000/app"));
+        let cfg = PolicyConfig {
+            dev_mode_enabled: true,
+            dev_localhost_origins: vec!["https://localhost:3000".into()],
+            ..Default::default()
+        };
+        let call = ToolCall::new("c", "navigate")
+            .on(o("https://localhost:3000"))
+            .arg("url", LabeledValue::user("https://localhost:3000/app"));
         let d = PolicyEngine::new(cfg).check(&call, &ctx(&scope, &nav, &grants));
         assert_eq!(d.verdict, Verdict::Allow, "{d:?}");
     }
@@ -421,7 +472,13 @@ mod tests {
         let pay = ToolCall::new("c", "click")
             .on(o("https://shop.example"))
             .arg("ref", LabeledValue::from_origin(7, o("https://shop.example"), Sensitivity::Public))
-            .target(TargetInfo { role: "button".into(), name: "Оплатить заказ".into(), is_submit: true, form_has_payment_fields: true, ..Default::default() });
+            .target(TargetInfo {
+                role: "button".into(),
+                name: "Оплатить заказ".into(),
+                is_submit: true,
+                form_has_payment_fields: true,
+                ..Default::default()
+            });
         let d = PolicyEngine::new(PolicyConfig::default()).check(&pay, &ctx(&scope, &m, &grants));
         assert_eq!(d.rule, "money.not_allowed");
 
@@ -469,7 +526,9 @@ mod tests {
         let nav = navigate_manifest();
         let mut grants = GrantStore::default();
         grants.add(Grant::new(GrantKind::OriginScope, "agent", "https://b.example", 0, 500));
-        let call = ToolCall::new("c", "navigate").on(o("https://a.example")).arg("url", LabeledValue::user("https://b.example/x"));
+        let call = ToolCall::new("c", "navigate")
+            .on(o("https://a.example"))
+            .arg("url", LabeledValue::user("https://b.example/x"));
         let engine = PolicyEngine::new(PolicyConfig::default());
         let mut c = ctx(&scope, &nav, &grants);
         c.now = 100;

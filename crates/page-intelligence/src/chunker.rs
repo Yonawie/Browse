@@ -45,31 +45,39 @@ pub fn chunk_text(blocks: &[Block<'_>], cfg: &ChunkerConfig) -> Vec<Chunk> {
     let mut current_heading: Option<String> = None;
     let mut current_tokens = 0u32;
 
-    let flush = |chunks: &mut Vec<Chunk>, current: &mut Vec<(String, u32, u32)>, heading: &Option<String>, tokens: &mut u32| {
-        if current.is_empty() {
-            return;
-        }
-        let text = current.iter().map(|(t, _, _)| t.as_str()).collect::<Vec<_>>().join("\n");
-        let start = current.first().map(|c| c.1).unwrap_or(0);
-        let end = current.last().map(|c| c.2).unwrap_or(start);
-        let ordinal = chunks.len() as u32;
-        chunks.push(Chunk { ordinal, heading_path: heading.clone(), text: text.clone(), char_start: start, char_end: end, token_count: approx_tokens(&text) });
-        // Overlap: keep the last sentences worth `overlap_ratio` of tokens.
-        let keep_tokens = (*tokens as f32 * cfg.overlap_ratio) as u32;
-        let mut kept = Vec::new();
-        let mut kept_tokens = 0;
-        for item in current.iter().rev() {
-            let t = approx_tokens(&item.0);
-            if kept_tokens + t > keep_tokens {
-                break;
+    let flush =
+        |chunks: &mut Vec<Chunk>, current: &mut Vec<(String, u32, u32)>, heading: &Option<String>, tokens: &mut u32| {
+            if current.is_empty() {
+                return;
             }
-            kept_tokens += t;
-            kept.push(item.clone());
-        }
-        kept.reverse();
-        *current = kept;
-        *tokens = kept_tokens;
-    };
+            let text = current.iter().map(|(t, _, _)| t.as_str()).collect::<Vec<_>>().join("\n");
+            let start = current.first().map(|c| c.1).unwrap_or(0);
+            let end = current.last().map(|c| c.2).unwrap_or(start);
+            let ordinal = chunks.len() as u32;
+            chunks.push(Chunk {
+                ordinal,
+                heading_path: heading.clone(),
+                text: text.clone(),
+                char_start: start,
+                char_end: end,
+                token_count: approx_tokens(&text),
+            });
+            // Overlap: keep the last sentences worth `overlap_ratio` of tokens.
+            let keep_tokens = (*tokens as f32 * cfg.overlap_ratio) as u32;
+            let mut kept = Vec::new();
+            let mut kept_tokens = 0;
+            for item in current.iter().rev() {
+                let t = approx_tokens(&item.0);
+                if kept_tokens + t > keep_tokens {
+                    break;
+                }
+                kept_tokens += t;
+                kept.push(item.clone());
+            }
+            kept.reverse();
+            *current = kept;
+            *tokens = kept_tokens;
+        };
 
     for block in blocks {
         let heading = block.heading_path.map(|s| s.to_string());

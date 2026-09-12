@@ -109,10 +109,7 @@ impl Router {
         };
 
         let info = decided.0.info();
-        Ok((
-            decided.0.clone(),
-            RouteDecision { provider: info.name, locality: info.locality, reason: decided.1 },
-        ))
+        Ok((decided.0.clone(), RouteDecision { provider: info.name, locality: info.locality, reason: decided.1 }))
     }
 
     pub async fn chat(&self, request: &ModelRequest) -> Result<(ModelResponse, RouteDecision), ModelError> {

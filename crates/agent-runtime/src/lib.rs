@@ -71,22 +71,44 @@ pub enum ExecutionMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum StepOutcome {
-    Acted { call: ToolCall, result: ToolResult },
-    Denied { call: ToolCall, reason: String, rule: String },
-    Rejected { call: ToolCall },
+    Acted {
+        call: ToolCall,
+        result: ToolResult,
+    },
+    Denied {
+        call: ToolCall,
+        reason: String,
+        rule: String,
+    },
+    Rejected {
+        call: ToolCall,
+    },
     /// Dry run reached an action that needs confirmation.
-    DryRunStopped { call: ToolCall, reason: String },
-    Finished { summary: String },
-    NeedsUser { question: String },
+    DryRunStopped {
+        call: ToolCall,
+        reason: String,
+    },
+    Finished {
+        summary: String,
+    },
+    NeedsUser {
+        question: String,
+    },
     HumanChallenge,
-    LimitReached { what: String },
+    LimitReached {
+        what: String,
+    },
 }
 
 impl StepOutcome {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            StepOutcome::Finished { .. } | StepOutcome::NeedsUser { .. } | StepOutcome::HumanChallenge | StepOutcome::LimitReached { .. } | StepOutcome::DryRunStopped { .. }
+            StepOutcome::Finished { .. }
+                | StepOutcome::NeedsUser { .. }
+                | StepOutcome::HumanChallenge
+                | StepOutcome::LimitReached { .. }
+                | StepOutcome::DryRunStopped { .. }
         )
     }
 }
@@ -146,7 +168,12 @@ impl AgentRunner {
             confirmer,
             journal,
             memory_lookup: Arc::new(|_| None),
-            now: Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)),
+            now: Arc::new(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0)
+            }),
             max_consecutive_denies: 3,
         }
     }
@@ -215,7 +242,11 @@ impl AgentRunner {
         if session.open {
             session.open = false;
             let _ = self.engine.close_webview(&session.webview).await;
-            self.journal.record(JournalEvent::SessionEnded { session_id: session.id.clone(), status: status.into(), outcome });
+            self.journal.record(JournalEvent::SessionEnded {
+                session_id: session.id.clone(),
+                status: status.into(),
+                outcome,
+            });
         }
         Ok(())
     }
@@ -262,7 +293,11 @@ impl AgentRunner {
 
         // 1. Observe (trimmed to the local budget unless cloud planning is allowed).
         let mut observation = self.engine.observe(&session.webview).await?;
-        let budget = if session.scope.model_policy.allow_cloud_planning { ObservationBudget::CLOUD } else { ObservationBudget::LOCAL };
+        let budget = if session.scope.model_policy.allow_cloud_planning {
+            ObservationBudget::CLOUD
+        } else {
+            ObservationBudget::LOCAL
+        };
         trim_observation(&mut observation, budget);
         let before_hash = observation.page.snapshot_hash.clone();
 
@@ -298,7 +333,13 @@ impl AgentRunner {
 
         // 3. Label arguments (refs → provenance) and check policy.
         let Some(manifest) = self.tools.get(&tool).cloned() else {
-            return Ok(self.deny_feedback(session, ToolCall::new(call_id, &tool), "tool.unknown", format!("unknown tool `{tool}`"), &before_hash));
+            return Ok(self.deny_feedback(
+                session,
+                ToolCall::new(call_id, &tool),
+                "tool.unknown",
+                format!("unknown tool `{tool}`"),
+                &before_hash,
+            ));
         };
         let lookup = self.memory_lookup.clone();
         let call = match label_call(
@@ -315,7 +356,15 @@ impl AgentRunner {
             },
         ) {
             Ok(c) => c,
-            Err(e) => return Ok(self.deny_feedback(session, ToolCall::new(call_id, &tool), "args.invalid", e.to_string(), &before_hash)),
+            Err(e) => {
+                return Ok(self.deny_feedback(
+                    session,
+                    ToolCall::new(call_id, &tool),
+                    "args.invalid",
+                    e.to_string(),
+                    &before_hash,
+                ))
+            }
         };
 
         let decision = self.policy.check(
@@ -335,12 +384,30 @@ impl AgentRunner {
         }
 
         // 4. Blind critic. Its verdict can only make things stricter.
-        let critic_verdict = self.critic.review(&CriticInput::from_call(&session.request, &call, &decision, session.steps)).await?;
+        let critic_verdict =
+            self.critic.review(&CriticInput::from_call(&session.request, &call, &decision, session.steps)).await?;
         let verdict = decision.verdict.clone().stricter(critic_verdict.clone());
         if let Verdict::Deny { reason } = &verdict {
-            self.record_action(session, ordinal, &call, &decision, Some(critic_verdict), None, false, None, Some(reason.clone()), &before_hash, None);
+            self.record_action(
+                session,
+                ordinal,
+                &call,
+                &decision,
+                Some(critic_verdict),
+                None,
+                false,
+                None,
+                Some(reason.clone()),
+                &before_hash,
+                None,
+            );
             session.consecutive_denies += 1;
-            session.history.push(StepSummary { ordinal, tool: call.tool.clone(), target: target_label(&call), outcome: format!("denied by critic: {reason}") });
+            session.history.push(StepSummary {
+                ordinal,
+                tool: call.tool.clone(),
+                target: target_label(&call),
+                outcome: format!("denied by critic: {reason}"),
+            });
             return Ok(StepOutcome::Denied { call, reason: reason.clone(), rule: "critic.deny".into() });
         }
 
@@ -348,8 +415,25 @@ impl AgentRunner {
         let mut approval = None;
         if let Verdict::Confirm { reason } = &verdict {
             if session.mode == ExecutionMode::DryRun {
-                self.record_action(session, ordinal, &call, &decision, Some(critic_verdict), None, false, None, Some(format!("dry run: {reason}")), &before_hash, None);
-                session.history.push(StepSummary { ordinal, tool: call.tool.clone(), target: target_label(&call), outcome: "dry run stopped".into() });
+                self.record_action(
+                    session,
+                    ordinal,
+                    &call,
+                    &decision,
+                    Some(critic_verdict),
+                    None,
+                    false,
+                    None,
+                    Some(format!("dry run: {reason}")),
+                    &before_hash,
+                    None,
+                );
+                session.history.push(StepSummary {
+                    ordinal,
+                    tool: call.tool.clone(),
+                    target: target_label(&call),
+                    outcome: "dry run stopped".into(),
+                });
                 return Ok(StepOutcome::DryRunStopped { call, reason: reason.clone() });
             }
             let request = ConfirmationRequest {
@@ -364,8 +448,25 @@ impl AgentRunner {
             let answer = self.confirmer.confirm(&request).await?;
             match answer {
                 ConfirmationAnswer::Rejected => {
-                    self.record_action(session, ordinal, &call, &decision, Some(critic_verdict), Some(answer), false, None, Some("rejected by user".into()), &before_hash, None);
-                    session.history.push(StepSummary { ordinal, tool: call.tool.clone(), target: target_label(&call), outcome: "rejected by user".into() });
+                    self.record_action(
+                        session,
+                        ordinal,
+                        &call,
+                        &decision,
+                        Some(critic_verdict),
+                        Some(answer),
+                        false,
+                        None,
+                        Some("rejected by user".into()),
+                        &before_hash,
+                        None,
+                    );
+                    session.history.push(StepSummary {
+                        ordinal,
+                        tool: call.tool.clone(),
+                        target: target_label(&call),
+                        outcome: "rejected by user".into(),
+                    });
                     return Ok(StepOutcome::Rejected { call });
                 }
                 ConfirmationAnswer::ApprovedForSession => {
@@ -382,7 +483,12 @@ impl AgentRunner {
         let (tool_result, error) = match result {
             Ok(r) => (r, None),
             Err(e) => (
-                ToolResult { call_id: call.id.clone(), ok: false, output: LabeledValue::model(Value::Null), error: Some(e.to_string()) },
+                ToolResult {
+                    call_id: call.id.clone(),
+                    ok: false,
+                    output: LabeledValue::model(Value::Null),
+                    error: Some(e.to_string()),
+                },
                 Some(e.to_string()),
             ),
         };
@@ -393,17 +499,38 @@ impl AgentRunner {
             session.results.insert(call.id.clone(), tool_result.output.clone());
         }
         session.consecutive_denies = 0;
-        self.record_action(session, ordinal, &call, &decision, Some(critic_verdict), approval, true, Some(tool_result.output.value.clone()), error, &before_hash, after_hash);
+        self.record_action(
+            session,
+            ordinal,
+            &call,
+            &decision,
+            Some(critic_verdict),
+            approval,
+            true,
+            Some(tool_result.output.value.clone()),
+            error,
+            &before_hash,
+            after_hash,
+        );
         session.history.push(StepSummary {
             ordinal,
             tool: call.tool.clone(),
             target: target_label(&call),
-            outcome: if tool_result.ok { "ok".into() } else { format!("error: {}", tool_result.error.clone().unwrap_or_default()) },
+            outcome: if tool_result.ok {
+                "ok".into()
+            } else {
+                format!("error: {}", tool_result.error.clone().unwrap_or_default())
+            },
         });
         Ok(StepOutcome::Acted { call, result: tool_result })
     }
 
-    async fn execute(&self, session: &Session, call: &ToolCall, observation: &Observation) -> Result<ToolResult, AgentError> {
+    async fn execute(
+        &self,
+        session: &Session,
+        call: &ToolCall,
+        observation: &Observation,
+    ) -> Result<ToolResult, AgentError> {
         let origin = observation.page.origin.clone();
         let page_sens = observation.page.sensitivity;
         match to_action(call, observation)? {
@@ -412,41 +539,85 @@ impl AgentRunner {
                 Ok(ToolResult {
                     call_id: call.id.clone(),
                     ok: r.ok,
-                    output: LabeledValue::from_origin(json!({ "url": r.url, "message": r.message, "output": r.output }), origin, page_sens),
+                    output: LabeledValue::from_origin(
+                        json!({ "url": r.url, "message": r.message, "output": r.output }),
+                        origin,
+                        page_sens,
+                    ),
                     error: None,
                 })
             }
-            None => match call.tool.as_str() {
-                "extract" => {
-                    let ids: Vec<String> = match call.args.get("obs_ids").map(|v| &v.value) {
-                        Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
-                        Some(Value::String(s)) => vec![s.clone()],
-                        _ => vec![],
-                    };
-                    let texts: Vec<Value> = observation
+            None => {
+                match call.tool.as_str() {
+                    "extract" => {
+                        let ids: Vec<String> = match call.args.get("obs_ids").map(|v| &v.value) {
+                            Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+                            Some(Value::String(s)) => vec![s.clone()],
+                            _ => vec![],
+                        };
+                        let texts: Vec<Value> = observation
                         .content
                         .iter()
                         .filter(|c| ids.contains(&c.obs_id))
                         .map(|c| json!({ "obs_id": c.obs_id, "text": c.text, "suspect_injection": c.suspect_injection }))
                         .collect();
-                    Ok(ToolResult { call_id: call.id.clone(), ok: true, output: LabeledValue::from_origin(Value::Array(texts), origin, page_sens), error: None })
+                        Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            ok: true,
+                            output: LabeledValue::from_origin(Value::Array(texts), origin, page_sens),
+                            error: None,
+                        })
+                    }
+                    "search_memory" => Ok(ToolResult {
+                        call_id: call.id.clone(),
+                        ok: false,
+                        output: LabeledValue {
+                            value: Value::Null,
+                            provenance: Provenance::Tool { name: "search_memory".into() },
+                            sensitivity: Sensitivity::Personal,
+                        },
+                        error: Some("search_memory is wired by the application (needs MemoryStore)".into()),
+                    }),
+                    other => Err(AgentError::UnknownTool(other.to_string())),
                 }
-                "search_memory" => Ok(ToolResult {
-                    call_id: call.id.clone(),
-                    ok: false,
-                    output: LabeledValue { value: Value::Null, provenance: Provenance::Tool { name: "search_memory".into() }, sensitivity: Sensitivity::Personal },
-                    error: Some("search_memory is wired by the application (needs MemoryStore)".into()),
-                }),
-                other => Err(AgentError::UnknownTool(other.to_string())),
-            },
+            }
         }
     }
 
-    fn deny_feedback(&self, session: &mut Session, call: ToolCall, rule: &str, reason: String, before_hash: &str) -> StepOutcome {
-        let decision = Decision { verdict: Verdict::Deny { reason: reason.clone() }, rule: rule.to_string(), consequential: false, details: vec![] };
-        self.record_action(session, session.steps, &call, &decision, None, None, false, None, Some(reason.clone()), before_hash, None);
+    fn deny_feedback(
+        &self,
+        session: &mut Session,
+        call: ToolCall,
+        rule: &str,
+        reason: String,
+        before_hash: &str,
+    ) -> StepOutcome {
+        let decision = Decision {
+            verdict: Verdict::Deny { reason: reason.clone() },
+            rule: rule.to_string(),
+            consequential: false,
+            details: vec![],
+        };
+        self.record_action(
+            session,
+            session.steps,
+            &call,
+            &decision,
+            None,
+            None,
+            false,
+            None,
+            Some(reason.clone()),
+            before_hash,
+            None,
+        );
         session.consecutive_denies += 1;
-        session.history.push(StepSummary { ordinal: session.steps, tool: call.tool.clone(), target: target_label(&call), outcome: format!("denied ({rule}): {reason}") });
+        session.history.push(StepSummary {
+            ordinal: session.steps,
+            tool: call.tool.clone(),
+            target: target_label(&call),
+            outcome: format!("denied ({rule}): {reason}"),
+        });
         StepOutcome::Denied { call, reason, rule: rule.to_string() }
     }
 
@@ -474,7 +645,13 @@ impl AgentRunner {
                     for v in call.args.values() {
                         if let Provenance::Origin { origin } = &v.provenance {
                             if origin != to {
-                                session.grants.add(Grant::new(GrantKind::CrossOriginFlow, &session.id, &format!("{origin}->{to}"), now, until));
+                                session.grants.add(Grant::new(
+                                    GrantKind::CrossOriginFlow,
+                                    &session.id,
+                                    &format!("{origin}->{to}"),
+                                    now,
+                                    until,
+                                ));
                             }
                         }
                     }
@@ -524,7 +701,9 @@ pub fn preview(call: &ToolCall) -> String {
     let where_ = call.target_origin.as_ref().map(|o| format!(" on {o}")).unwrap_or_default();
     match (call.tool.as_str(), &call.target) {
         ("click", Some(t)) => format!("Click {} “{}”{where_}", t.role, t.name),
-        ("type", Some(t)) => format!("Type into {} “{}”{where_} (source: {})", t.role, t.name, provenance_label(call, "text")),
+        ("type", Some(t)) => {
+            format!("Type into {} “{}”{where_} (source: {})", t.role, t.name, provenance_label(call, "text"))
+        }
         ("navigate", _) => format!("Open {}", call.args.get("url").and_then(|v| v.value.as_str()).unwrap_or("?")),
         ("call_site_tool", Some(t)) => format!("Call site tool “{}”{where_}", t.name),
         (tool, Some(t)) => format!("{tool} {} “{}”{where_}", t.role, t.name),

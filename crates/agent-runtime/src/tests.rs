@@ -39,7 +39,9 @@ fn harness(planner: Arc<dyn Planner>, answers: Vec<ConfirmationAnswer>) -> Harne
             .with_element(2, "textbox", "Promo code")
             .with_element(3, "button", "Place order"),
     );
-    engine.add_page(MockPage::simple("https://notes.example/", "Notes", "My notes").with_element(10, "textbox", "New note"));
+    engine.add_page(
+        MockPage::simple("https://notes.example/", "Notes", "My notes").with_element(10, "textbox", "New note"),
+    );
     engine.add_page(MockPage::simple("https://evil.example/", "Evil", "..."));
 
     let journal = Arc::new(InMemoryJournal::default());
@@ -62,7 +64,16 @@ fn scope() -> TaskScope {
 }
 
 async fn start(h: &Harness, mode: ExecutionMode) -> Session {
-    h.runner.start("apply the promo code shown on the shop page", Sensitivity::Personal, scope(), "https://shop.example/", mode).await.unwrap()
+    h.runner
+        .start(
+            "apply the promo code shown on the shop page",
+            Sensitivity::Personal,
+            scope(),
+            "https://shop.example/",
+            mode,
+        )
+        .await
+        .unwrap()
 }
 
 fn executed_actions(j: &InMemoryJournal) -> Vec<(String, bool)> {
@@ -77,7 +88,13 @@ fn executed_actions(j: &InMemoryJournal) -> Vec<(String, bool)> {
 
 #[tokio::test]
 async fn happy_path_executes_and_journals() {
-    let h = harness(ScriptedPlanner::new(vec![call("1", "click", json!({ "ref": 1 })), PlanStep::Finish { summary: "opened details".into() }]), vec![]);
+    let h = harness(
+        ScriptedPlanner::new(vec![
+            call("1", "click", json!({ "ref": 1 })),
+            PlanStep::Finish { summary: "opened details".into() },
+        ]),
+        vec![],
+    );
     let mut s = start(&h, ExecutionMode::Live).await;
     let out = h.runner.run(&mut s).await.unwrap();
     assert_eq!(out, StepOutcome::Finished { summary: "opened details".into() });
@@ -101,7 +118,11 @@ async fn agent_disabled_by_default_policy() {
         Arc::new(ScriptedConfirmations::reject_all()),
         Arc::new(InMemoryJournal::default()),
     );
-    let err = runner.start("x", Sensitivity::Personal, scope(), "https://shop.example/", ExecutionMode::Live).await.err().unwrap();
+    let err = runner
+        .start("x", Sensitivity::Personal, scope(), "https://shop.example/", ExecutionMode::Live)
+        .await
+        .err()
+        .unwrap();
     assert!(matches!(err, AgentError::AgentDisabled));
 }
 
@@ -171,7 +192,11 @@ async fn cross_origin_flow_approved_for_session_creates_grant() {
         assert!(matches!(out, StepOutcome::Acted { .. }), "{out:?}");
     }
     assert_eq!(h.confirmer.seen.lock().unwrap().len(), 1, "second identical flow is covered by the grant");
-    assert!(s.grants.has(policy::GrantKind::CrossOriginFlow, "https://shop.example->https://notes.example", s.started_at + 1));
+    assert!(s.grants.has(
+        policy::GrantKind::CrossOriginFlow,
+        "https://shop.example->https://notes.example",
+        s.started_at + 1
+    ));
     let actions = h.engine.actions.lock().unwrap().clone();
     match &actions[1].1 {
         engine_adapter::Action::Type { text, .. } => assert_eq!(text, "Promo code today: SAVE10"),
@@ -181,7 +206,10 @@ async fn cross_origin_flow_approved_for_session_creates_grant() {
 
 #[tokio::test]
 async fn consequential_action_stops_dry_run_without_executing() {
-    let h = harness(ScriptedPlanner::new(vec![call("1", "click", json!({ "ref": 1 })), call("2", "click", json!({ "ref": 3 }))]), vec![ConfirmationAnswer::Approved]);
+    let h = harness(
+        ScriptedPlanner::new(vec![call("1", "click", json!({ "ref": 1 })), call("2", "click", json!({ "ref": 3 }))]),
+        vec![ConfirmationAnswer::Approved],
+    );
     let mut s = start(&h, ExecutionMode::DryRun).await;
     let out = h.runner.run(&mut s).await.unwrap();
     match out {
@@ -200,7 +228,10 @@ async fn consequential_action_stops_dry_run_without_executing() {
 
 #[tokio::test]
 async fn consequential_action_live_requires_confirmation_and_counts() {
-    let h = harness(ScriptedPlanner::new(vec![call("1", "click", json!({ "ref": 3 }))]), vec![ConfirmationAnswer::Approved]);
+    let h = harness(
+        ScriptedPlanner::new(vec![call("1", "click", json!({ "ref": 3 }))]),
+        vec![ConfirmationAnswer::Approved],
+    );
     let mut s = start(&h, ExecutionMode::Live).await;
     let out = h.runner.step(&mut s).await.unwrap();
     assert!(matches!(out, StepOutcome::Acted { .. }), "{out:?}");
@@ -257,13 +288,22 @@ async fn masked_fields_and_unknown_refs_never_reach_the_engine() {
         engine.clone(),
         PolicyEngine::new(PolicyConfig { agent_enabled: true, ..Default::default() }),
         ToolRegistry::builtin(),
-        ScriptedPlanner::new(vec![call("1", "type", json!({ "ref": 1, "text": "$user" })), call("2", "click", json!({ "ref": 42 }))]),
+        ScriptedPlanner::new(vec![
+            call("1", "type", json!({ "ref": 1, "text": "$user" })),
+            call("2", "click", json!({ "ref": 42 })),
+        ]),
         Arc::new(PermissiveCritic),
         Arc::new(ScriptedConfirmations::reject_all()),
         journal.clone(),
     );
     let mut s = runner
-        .start("log me in", Sensitivity::Personal, TaskScope::new(["https://shop.example"], ["type", "click"]), "https://shop.example/", ExecutionMode::Live)
+        .start(
+            "log me in",
+            Sensitivity::Personal,
+            TaskScope::new(["https://shop.example"], ["type", "click"]),
+            "https://shop.example/",
+            ExecutionMode::Live,
+        )
         .await
         .unwrap();
     let out = runner.step(&mut s).await.unwrap();
@@ -277,14 +317,29 @@ async fn masked_fields_and_unknown_refs_never_reach_the_engine() {
 async fn scope_validation_rejects_bad_scopes() {
     let h = harness(ScriptedPlanner::new(vec![]), vec![]);
     let bad = TaskScope::new(["http://shop.example"], ["click"]);
-    let err = h.runner.start("x", Sensitivity::Personal, bad, "http://shop.example/", ExecutionMode::Live).await.err().unwrap();
+    let err = h
+        .runner
+        .start("x", Sensitivity::Personal, bad, "http://shop.example/", ExecutionMode::Live)
+        .await
+        .err()
+        .unwrap();
     assert!(matches!(err, AgentError::InvalidScope(_)));
 
     let mut ro = TaskScope::new(["https://shop.example"], ["click"]);
     ro.profile = core_types::ScopeProfile::UserReadonly;
-    let err = h.runner.start("x", Sensitivity::Personal, ro, "https://shop.example/", ExecutionMode::Live).await.err().unwrap();
+    let err = h
+        .runner
+        .start("x", Sensitivity::Personal, ro, "https://shop.example/", ExecutionMode::Live)
+        .await
+        .err()
+        .unwrap();
     assert!(matches!(err, AgentError::InvalidScope(ref m) if m.contains("read-only")), "{err}");
 
-    let err = h.runner.start("x", Sensitivity::Personal, scope(), "https://evil.example/", ExecutionMode::Live).await.err().unwrap();
+    let err = h
+        .runner
+        .start("x", Sensitivity::Personal, scope(), "https://evil.example/", ExecutionMode::Live)
+        .await
+        .err()
+        .unwrap();
     assert!(matches!(err, AgentError::InvalidScope(ref m) if m.contains("outside")), "{err}");
 }
