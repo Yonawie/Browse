@@ -233,9 +233,10 @@ crates/
   agent-runtime/           реестр инструментов, scope, цикл шага, критик (трейт), dry-run, журнал
   model-gateway/           ModelProvider, Router, ModelManager (интерфейсы + llama-server клиент)
 apps/
-  desktop/                 бинарь: связывает слои; feature `cef` (пока заглушка)
-  ios/                     заметки по SwiftUI Shell + UniFFI
-sensor/                    TypeScript сенсор страницы (общий для CEF/WKWebView)
+  desktop/                 бинарь `browse-desktop`: связывает слои, мост Journal → SQLite,
+                           headless red-team demo (`demo`, `demo --dry-run`); feature `cef` зарезервирована
+  ios/                     README: SwiftUI Shell + WKWebView-адаптер + UniFFI (инкремент I6)
+sensor/                    TypeScript сенсор страницы для изолированного мира (общий для CEF/WKWebView)
 schema/memory.sql          DDL SQLite
 schemas/                   JSON Schema: tool-manifest, task-scope, policy
 docs/                      01-research, 02-architecture, adr/
