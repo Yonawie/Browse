@@ -121,6 +121,9 @@ impl PolicyEngine {
         // Navigation to a new origin is checked against the scope too.
         if let Some(url_arg) = call.args.get("url") {
             if let Some(url) = url_arg.value.as_str() {
+                if has_blocked_scheme(url) {
+                    return Decision::deny("url.blocked", format!("navigation to `{url}` is blocked by policy"));
+                }
                 match Origin::parse(url) {
                     Ok(dest) => {
                         if self.is_blocked_url(url, &dest) {
@@ -255,13 +258,15 @@ impl PolicyEngine {
     }
 
     fn is_blocked_url(&self, url: &str, origin: &Origin) -> bool {
-        let lower = url.to_ascii_lowercase();
-        let blocked_schemes = ["file:", "browser:", "chrome:", "chrome-extension:", "javascript:", "data:", "view-source:"];
-        if blocked_schemes.iter().any(|s| lower.starts_with(s)) {
-            return true;
-        }
-        self.is_blocked_origin(origin)
+        has_blocked_scheme(url) || self.is_blocked_origin(origin)
     }
+}
+
+fn has_blocked_scheme(url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    ["file:", "browser:", "chrome:", "chrome-extension:", "javascript:", "data:", "view-source:", "about:"]
+        .iter()
+        .any(|s| lower.starts_with(s))
 }
 
 fn decision_stricter(a: Decision, b: Decision) -> Decision {

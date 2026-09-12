@@ -20,6 +20,9 @@ pub mod llama_server;
 pub mod manager;
 pub mod router;
 
+pub use manager::{BudgetConfig, ModelManager, ModelSpec};
+pub use router::{RouteDecision, Router, RouterConfig};
+
 use core_types::{Locality, ModelTier, Sensitivity};
 use serde::{Deserialize, Serialize};
 
