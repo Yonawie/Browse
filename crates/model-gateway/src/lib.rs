@@ -11,17 +11,38 @@
 //! 3. [`manager::ModelManager`]: VRAM budget accounting for the local runtime
 //!    (fast + embed resident, smart/vision LRU-swapped, compositor reserve).
 //!
-//! No HTTP client lives in this crate. The `llama-server` adapter speaks the
-//! OpenAI-compatible protocol through a [`llama_server::Transport`] trait so
-//! that the request/response shaping is unit-testable and the desktop app can
-//! plug in whichever client it prefers.
+//! 4. [`gateway::Gateway`]: the facade the browser calls — cache, concurrency
+//!    limit, timeout and the local `model_calls` audit log around the router.
+//! 5. [`sidecar`] (feature `http`): lifecycle of `llama-server` processes.
+//!
+//! Providers speak the OpenAI-compatible protocol through the
+//! [`openai_compat::Transport`] trait; [`http::HttpTransport`] is the `reqwest`
+//! implementation with SSE streaming, and tests use in-memory transports.
 
-pub mod llama_server;
+pub mod cache;
+pub mod gateway;
+#[cfg(feature = "http")]
+pub mod http;
 pub mod manager;
+pub mod openai_compat;
 pub mod router;
+#[cfg(feature = "http")]
+pub mod sidecar;
+pub mod stream;
 
-pub use manager::{BudgetConfig, ModelManager, ModelSpec};
+/// Kept for callers that predate the generalised provider.
+pub mod llama_server {
+    pub use crate::openai_compat::{LlamaServerProvider, Transport};
+}
+
+pub use cache::{MemoryCache, ResponseCache};
+pub use gateway::{CallLog, CallRecord, Gateway, GatewayResponse, MemoryCallLog};
+#[cfg(feature = "http")]
+pub use http::{HttpTransport, RoutingTransport};
+pub use manager::{BudgetConfig, LoadPlan, ModelManager, ModelSpec};
+pub use openai_compat::{LlamaServerProvider, OpenAiCompatProvider, Transport};
 pub use router::{RouteDecision, Router, RouterConfig};
+pub use stream::{ChatStream, StreamEvent};
 
 use core_types::{Locality, ModelTier, Sensitivity};
 use serde::{Deserialize, Serialize};
@@ -38,6 +59,10 @@ pub enum ModelError {
     Protocol(String),
     #[error("model does not fit into the VRAM budget: need {need_mb} MiB, have {available_mb} MiB")]
     OutOfBudget { need_mb: u32, available_mb: u32 },
+    #[error("model call timed out after {0} ms")]
+    Timeout(u64),
+    #[error("unsupported: {0}")]
+    Unsupported(String),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
@@ -183,7 +208,18 @@ impl ProviderInfo {
 pub trait ModelProvider: Send + Sync {
     fn info(&self) -> ProviderInfo;
 
+    /// Concrete model id serving `tier`, when known (cache keys, audit log).
+    fn model_id(&self, _tier: ModelTier) -> Option<String> {
+        None
+    }
+
     async fn chat(&self, request: &ModelRequest) -> Result<ModelResponse, ModelError>;
+
+    /// Streaming chat. Providers without native streaming inherit this
+    /// fallback, which yields the whole answer as one delta.
+    async fn chat_stream(&self, request: &ModelRequest) -> Result<ChatStream, ModelError> {
+        Ok(stream::single(self.chat(request).await?))
+    }
 
     /// Embed texts with the `Embed` tier model. Returns one vector per input.
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, ModelError>;

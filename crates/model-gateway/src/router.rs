@@ -17,6 +17,7 @@ use std::sync::Arc;
 use core_types::{Locality, ModelTier, Sensitivity};
 use serde::{Deserialize, Serialize};
 
+use crate::stream::ChatStream;
 use crate::{ModelError, ModelProvider, ModelRequest, ModelResponse};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -118,13 +119,22 @@ impl Router {
         Ok((response, decision))
     }
 
+    pub async fn chat_stream(&self, request: &ModelRequest) -> Result<(ChatStream, RouteDecision), ModelError> {
+        let (provider, decision) = self.route(request)?;
+        let stream = provider.chat_stream(request).await?;
+        Ok((stream, decision))
+    }
+
     /// Embeddings are always computed locally: the embedder is small and the
     /// texts are page content whose class is not known cheaply per chunk.
+    pub fn local_embedder(&self) -> Result<Arc<dyn ModelProvider>, ModelError> {
+        self.first_with(Locality::Local, ModelTier::Embed)
+            .cloned()
+            .ok_or_else(|| ModelError::NoRoute("no local embedding provider".into()))
+    }
+
     pub async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, ModelError> {
-        let provider = self
-            .first_with(Locality::Local, ModelTier::Embed)
-            .ok_or_else(|| ModelError::NoRoute("no local embedding provider".into()))?;
-        provider.embed(texts).await
+        self.local_embedder()?.embed(texts).await
     }
 }
 
