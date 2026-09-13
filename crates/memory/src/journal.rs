@@ -139,6 +139,86 @@ impl MemoryStore {
         )?;
         Ok(())
     }
+
+    /// Local audit of model usage (`model_calls`). Never contains prompt text.
+    pub fn record_model_call(&self, call: &ModelCallRecord) -> Result<String> {
+        let id = new_id();
+        self.conn().execute(
+            "INSERT INTO model_calls(id, session_id, purpose, provider, model, locality, sensitivity,
+                                     input_tokens, output_tokens, latency_ms, cost_usd, cache_hit, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                id,
+                call.session_id,
+                call.purpose,
+                call.provider,
+                call.model,
+                call.locality,
+                call.sensitivity,
+                call.input_tokens,
+                call.output_tokens,
+                call.latency_ms,
+                call.cost_usd,
+                call.cache_hit as i64,
+                call.created_at.unwrap_or_else(now_ms),
+            ],
+        )?;
+        Ok(id)
+    }
+
+    /// Aggregate view for the settings UI: calls, tokens and cache hits per (provider, model, locality).
+    pub fn model_usage(&self) -> Result<Vec<ModelUsageRow>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT provider, model, locality, COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+                    SUM(cache_hit), COALESCE(SUM(cost_usd),0)
+             FROM model_calls GROUP BY provider, model, locality ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(ModelUsageRow {
+                    provider: r.get(0)?,
+                    model: r.get(1)?,
+                    locality: r.get(2)?,
+                    calls: r.get(3)?,
+                    input_tokens: r.get(4)?,
+                    output_tokens: r.get(5)?,
+                    cache_hits: r.get(6)?,
+                    cost_usd: r.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelCallRecord {
+    pub session_id: Option<String>,
+    pub purpose: String,
+    pub provider: String,
+    pub model: String,
+    /// `local` | `cloud`
+    pub locality: String,
+    /// `public` | `personal` | `private`
+    pub sensitivity: String,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub latency_ms: Option<i64>,
+    pub cost_usd: Option<f64>,
+    pub cache_hit: bool,
+    pub created_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelUsageRow {
+    pub provider: String,
+    pub model: String,
+    pub locality: String,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_hits: i64,
+    pub cost_usd: f64,
 }
 
 #[cfg(test)]
@@ -179,5 +259,35 @@ mod tests {
         assert!(err.to_string().contains("append-only"));
         assert_eq!(s.count("agent_actions").unwrap(), 1);
         s.set_session_status(&sid, "done", Some("ok")).unwrap();
+    }
+
+    #[test]
+    fn model_calls_are_recorded_and_aggregated() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let rec = |cache_hit: bool| ModelCallRecord {
+            session_id: None,
+            purpose: "summarize".into(),
+            provider: "llama-server".into(),
+            model: "qwen".into(),
+            locality: "local".into(),
+            sensitivity: "private".into(),
+            input_tokens: Some(100),
+            output_tokens: Some(20),
+            latency_ms: Some(300),
+            cost_usd: None,
+            cache_hit,
+            created_at: None,
+        };
+        s.record_model_call(&rec(false)).unwrap();
+        s.record_model_call(&rec(true)).unwrap();
+        let usage = s.model_usage().unwrap();
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].calls, 2);
+        assert_eq!(usage[0].cache_hits, 1);
+        assert_eq!(usage[0].input_tokens, 200);
+
+        let mut bad = rec(false);
+        bad.locality = "moon".into();
+        assert!(s.record_model_call(&bad).is_err(), "CHECK constraint on locality");
     }
 }

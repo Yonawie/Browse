@@ -10,7 +10,7 @@ pub mod journal;
 pub mod search;
 pub mod store;
 
-pub use journal::JournalEntry;
+pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};
 pub use search::{SearchFilters, SearchHit};
 pub use store::{MemoryStore, NewChunk, NewPageVersion};
 
