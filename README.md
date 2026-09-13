@@ -5,11 +5,36 @@ memory, an agent that acts on pages), not a chat button bolted onto Chrome.
 Windows + iOS, local-first inference on ~8 GB RAM / RTX 4060-class hardware,
 open-source licenses only, **zero telemetry**.
 
-This repository contains the engineering documents and the increment-I0 code:
+This repository contains the engineering documents and the code so far:
 domain types, the deterministic policy engine, the SQLite memory schema and
 store, the model gateway (routing + VRAM budget), the agent runtime, an
-engine-adapter trait with a mock backend, the page sensor, and a headless
-desktop binary that runs the whole pipeline end-to-end.
+engine-adapter trait with a mock backend **and a real Chromium backend over
+the DevTools Protocol**, the page sensor, local fixture sites for tests, and a
+headless desktop binary that runs the whole pipeline end-to-end.
+
+## Run it in 5 minutes
+
+Prerequisites: Rust stable ≥ 1.88 ([rustup](https://rustup.rs)); a
+Chromium-based browser (Chrome, Chromium or Edge) for the engine's end-to-end
+tests (they skip themselves if none is found; point `BROWSE_CHROME` at a
+binary to override detection); Node ≥ 20 only if you change the sensor.
+
+```sh
+git clone https://github.com/Yonawie/Browse && cd Browse
+cargo test --workspace --all-features         # 77 tests incl. 7 headless Chromium E2E (~5 s)
+cargo run -p browse-desktop -- demo           # red-team demo of the policy layers (mock engine)
+cargo run -p fixtures                         # serve the fixture sites on http://*.localhost:8765
+```
+
+With the fixture server running, open `http://shop.localhost:8765`,
+`http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
+demo) or `http://hostile.localhost:8765` in any browser; `*.localhost` resolves
+to loopback without configuration. Sensor changes: `cd sensor && npm ci && npm
+test` (rebuilds `sensor/dist/sensor.iife.js`, which is committed and embedded
+into `engine-cdp` at compile time so `cargo build` never needs Node).
+
+Progress, measurements and known limitations per stage are tracked in
+[`docs/03-status.md`](docs/03-status.md).
 
 ## Documents
 
@@ -17,6 +42,7 @@ desktop binary that runs the whole pipeline end-to-end.
 |---|---|
 | [`docs/01-research.md`](docs/01-research.md) | Phase 1: market landscape (Arc/Dia, Comet, Brave Leo, Opera Neon, Chrome Gemini, Edge Copilot, Vivaldi, SigmaOS, Zen, Operator, Browser Use, Playwright agents), capability map by layer, technical constraints and risks, engine comparison and choice, AI stack, ADR summary |
 | [`docs/02-architecture.md`](docs/02-architecture.md) | Phase 2: layers, agent security model, privacy model, performance budgets, extensibility, data schema, repo layout, increment roadmap |
+| [`docs/03-status.md`](docs/03-status.md) | Phases 3–4: per-stage status, build/test results, performance measurements vs budgets, limitations, next steps |
 | [`docs/adr/`](docs/adr/) | ADR-001 engine (CEF + WKWebView behind one adapter) · ADR-002 language/stack (Rust core, TS shell/sensor, SwiftUI iOS) · ADR-003 local inference (llama-server sidecar, model preset for 8 GB VRAM) · ADR-004 memory store (SQLite + sqlite-vec + FTS5) · ADR-005 agent security · ADR-006 observation format · ADR-007 routing/privacy · ADR-008 extensibility |
 
 ## Layout
@@ -29,26 +55,29 @@ crates/
   page-intelligence/       chunker, injection signals, page kind, observation budgets
   memory/                  schema/memory.sql migrations, MemoryStore, hybrid search (BM25 + vector, RRF), append-only journal
   engine-adapter/          EngineAdapter trait, action/event vocabulary, MockEngine
+  engine-cdp/              Chromium over the DevTools Protocol: isolated-world sensor, ref-based trusted input,
+                           per-profile browser contexts, cookies, AX tree, screenshots; headless E2E tests
+  fixtures/                local fixture sites (shop, shop2, forms, news, login, hostile, evil) on *.localhost
   model-gateway/           ModelProvider, sensitivity-aware Router, llama-server adapter, VRAM ModelManager
   agent-runtime/           observe → plan → label refs → policy → blind critic → confirm/dry-run → act → journal
 apps/
-  desktop/                 browse-desktop binary (mock engine in I0; `cef` feature reserved), SQLite journal bridge
+  desktop/                 browse-desktop binary (mock engine demo), SQLite journal bridge
   ios/                     SwiftUI + WKWebView + UniFFI notes
-sensor/                    TypeScript page sensor for the isolated world (shared by CEF and WKWebView)
+sensor/                    TypeScript page sensor for the isolated world; dist/ is the committed esbuild bundle
 schema/memory.sql          SQLite DDL (WAL, FTS5, vec0, append-only triggers)
 schemas/                   JSON Schema: tool-manifest, task-scope, policy
+.github/workflows/ci.yml   fmt, clippy (-D warnings), build, test on Windows/Linux/macOS + sensor job
 ```
 
 ## Build and test
 
-Requires Rust stable ≥ 1.88 (`rust-version` in `Cargo.toml`) and, for the sensor, Node ≥ 20.
-
 ```sh
-cargo test --workspace                       # 65 unit/integration tests
+cargo test --workspace --all-features        # everything, including Chromium E2E when a browser is present
+cargo test -p engine-cdp --test e2e          # only the engine E2E suite
+cargo clippy --workspace --all-targets --all-features && cargo fmt --all -- --check
 cargo run -p browse-desktop -- schema-check  # apply DDL to an in-memory DB
 cargo run -p browse-desktop -- demo          # headless red-team demo (see below)
 cargo run -p browse-desktop -- demo --dry-run
-cd sensor && npm install && npm run typecheck
 ```
 
 The demo drives the agent runtime with a scripted "planner" that behaves like a
