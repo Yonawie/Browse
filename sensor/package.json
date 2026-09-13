@@ -5,12 +5,13 @@
   "license": "Apache-2.0",
   "description": "Page sensor injected into an isolated world; produces core_types::Observation JSON",
   "type": "module",
-  "main": "dist/sensor.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "esbuild src/sensor.ts --bundle --format=iife --global-name=BrowseSensor --target=es2020 --outfile=dist/sensor.iife.js --log-level=warning",
+    "test": "npm run build && node test/smoke.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.6.0"
   }
 }

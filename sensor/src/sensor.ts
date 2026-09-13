@@ -262,6 +262,10 @@ const INJECTION = [
   /ignore (all |any )?(previous|prior|above) (instructions|prompts)/i,
   /(you are|you're) (now |an? )?(ai|assistant|chatgpt|claude|gemini|model|agent)/i,
   /^\s*(system|assistant|developer)\s*[:：]/im,
+  // Text addressed to the model rather than to the reader.
+  /\b(note|message|instructions?|attention) (to|for) (the |any |all )?(ai|llm|assistant|agent|model)s?\b/i,
+  /\b(ai|llm) agents? (reading|visiting|browsing)/i,
+  /\b(to (finish|complete) (the|your|this) task,? you must)/i,
   /(do not|don't) (tell|inform|show) (the )?user/i,
   /(send|forward|post|exfiltrate|upload) .*(cookies?|tokens?|password|credentials|history)/i,
   /(игнорируй|забудь) (все )?(предыдущие|прежние) (инструкции|указания)/i,
@@ -343,6 +347,13 @@ function nextSkippingChildren(walker: TreeWalker): Element | null {
   return n as Element;
 }
 
+/** Full text of every chunk from the last snapshot, for `read_more` after budget trimming. */
+const lastChunks = new Map<string, string>();
+
+export function readMore(obsId: string): string | null {
+  return lastChunks.get(obsId) ?? null;
+}
+
 /** Coarse packing into ~300-token chunks; the Rust chunker re-chunks for indexing. */
 function packChunks(blocks: Block[]): ContentChunk[] {
   const chunks: ContentChunk[] = [];
@@ -373,6 +384,8 @@ function packChunks(blocks: Block[]): ContentChunk[] {
     pos += b.text.length + 1;
   }
   flush();
+  lastChunks.clear();
+  for (const c of chunks) lastChunks.set(c.obs_id, c.text);
   return chunks;
 }
 
@@ -417,11 +430,13 @@ function formSchema(f: HTMLFormElement): unknown {
 
 function pageKind(interactive: InteractiveElement[], blocks: Block[]): string {
   const url = location.href.toLowerCase();
+  // Values mirror `core_types::PageKind` (snake_case).
   if (/\/(cart|checkout|basket|payment|order)/.test(url) || interactive.some((e) => e.input_type?.startsWith("cc-"))) return "checkout";
-  if (interactive.some((e) => e.state.masked && e.input_type === "password")) return "login";
-  if (/\/(search|results)\b|[?&]q=/.test(url)) return "search_results";
-  if (document.querySelector("article") && blocks.length > 5) return "article";
-  if (document.querySelectorAll("video").length && /watch|video/.test(url)) return "video";
+  if (interactive.some((e) => e.state.masked && e.input_type === "password")) return "auth";
+  if (/\/(search|results)\b|[?&]q=/.test(url)) return "search";
+  if (document.querySelector("article") && blocks.length >= 3) return "article";
+  if (document.querySelectorAll("video").length && /watch|video/.test(url)) return "media";
+  if (document.querySelector("[itemtype*='Product'], .product, #checkout") || /\/p\//.test(url)) return "product";
   if (interactive.filter((e) => e.role === "textbox").length >= 3) return "form";
   return "unknown";
 }
