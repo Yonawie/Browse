@@ -86,8 +86,9 @@ impl PolicyEngine {
             return Err("scope must declare at least one origin".into());
         }
         for o in &scope.origins {
-            if !o.starts_with("https://") {
-                return Err(format!("scope origin must be https: {o}"));
+            let dev_origin = self.config.dev_mode_enabled && self.config.dev_localhost_origins.iter().any(|d| d == o);
+            if !o.starts_with("https://") && !dev_origin {
+                return Err(format!("scope origin must be https (or a dev-mode localhost origin): {o}"));
             }
         }
         for tool in &scope.tools {
@@ -266,14 +267,14 @@ impl PolicyEngine {
     }
 
     fn is_blocked_origin(&self, origin: &Origin) -> bool {
+        // Loopback is allowed only in dev mode and only for explicitly listed
+        // origins (`http://` is acceptable there: localhost is a secure context).
+        if origin.is_loopback() {
+            return !self.config.dev_mode_enabled
+                || !self.config.dev_localhost_origins.iter().any(|o| o == origin.as_str());
+        }
         if !origin.is_https() {
             return true;
-        }
-        if origin.is_loopback() && !self.config.dev_mode_enabled {
-            return true;
-        }
-        if origin.is_loopback() {
-            return !self.config.dev_localhost_origins.iter().any(|o| o == origin.as_str());
         }
         let host = origin.host();
         host.starts_with("10.") || host.starts_with("192.168.") || host.starts_with("169.254.")
