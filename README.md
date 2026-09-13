@@ -21,7 +21,7 @@ binary to override detection); Node ≥ 20 only if you change the sensor.
 
 ```sh
 git clone https://github.com/Yonawie/Browse && cd Browse
-cargo test --workspace --all-features         # 77 tests incl. 7 headless Chromium E2E (~5 s)
+cargo test --workspace --all-features         # 101 tests incl. 7 headless Chromium E2E (~5 s)
 cargo run -p browse-desktop -- demo           # red-team demo of the policy layers (mock engine)
 cargo run -p fixtures                         # serve the fixture sites on http://*.localhost:8765
 ```
@@ -58,7 +58,9 @@ crates/
   engine-cdp/              Chromium over the DevTools Protocol: isolated-world sensor, ref-based trusted input,
                            per-profile browser contexts, cookies, AX tree, screenshots; headless E2E tests
   fixtures/                local fixture sites (shop, shop2, forms, news, login, hostile, evil) on *.localhost
-  model-gateway/           ModelProvider, sensitivity-aware Router, llama-server adapter, VRAM ModelManager
+  model-gateway/           ModelProvider (chat, streaming, tools, JSON schema, embeddings), sensitivity-aware Router,
+                           OpenAI-compatible provider (local llama-server / cloud), reqwest+SSE transport,
+                           Gateway (cache, limits, model_calls log), VRAM ModelManager, llama-server sidecar pool
   agent-runtime/           observe → plan → label refs → policy → blind critic → confirm/dry-run → act → journal
 apps/
   desktop/                 browse-desktop binary (mock engine demo), SQLite journal bridge
@@ -78,7 +80,32 @@ cargo clippy --workspace --all-targets --all-features && cargo fmt --all -- --ch
 cargo run -p browse-desktop -- schema-check  # apply DDL to an in-memory DB
 cargo run -p browse-desktop -- demo          # headless red-team demo (see below)
 cargo run -p browse-desktop -- demo --dry-run
+cargo run -p browse-desktop -- models        # model routing table + streamed smoke prompt
 ```
+
+### Local models
+
+Any [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` works; the
+alias is read from `/v1/models`. Start one chat server and one embedding server
+(the ADR-003 preset is Qwen3-4B / Qwen3-8B + EmbeddingGemma-300M; smaller
+models run on CPU-only machines), then point the binary at them:
+
+```sh
+llama-server -m qwen3-4b-instruct-q4_k_m.gguf --alias fast --port 8081 --jinja -c 8192 -ngl 99
+llama-server -m embeddinggemma-300m-Q8_0.gguf --alias embed --port 8082 --embeddings --pooling mean
+BROWSE_LLAMA_CHAT_URL=http://127.0.0.1:8081 BROWSE_LLAMA_EMBED_URL=http://127.0.0.1:8082 \
+  cargo run -p browse-desktop -- models
+# same variables enable the live gateway tests:
+BROWSE_LLAMA_CHAT_URL=http://127.0.0.1:8081 BROWSE_LLAMA_EMBED_URL=http://127.0.0.1:8082 \
+  cargo test -p model-gateway --test live_llama -- --nocapture
+```
+
+Alternatively set `BROWSE_LLAMA_SERVER=/path/to/llama-server` and
+`BROWSE_MODELS_DIR=/path/to/ggufs` and the binary spawns its own sidecars. An
+OpenAI-compatible cloud endpoint is optional (`BROWSE_CLOUD_BASE_URL`,
+`BROWSE_CLOUD_API_KEY`, `BROWSE_CLOUD_MODEL`) and is only ever used for
+`Public` data, or `Personal` data with a per-request opt-in; `BROWSE_OFFLINE=1`
+disables it entirely.
 
 The demo drives the agent runtime with a scripted "planner" that behaves like a
 prompt-injected model on a shop page and prints what the deterministic layers

@@ -14,7 +14,7 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 |---|---|---|---|
 | S1 Скелет: workspace, CI (Windows/Linux/macOS + сенсор), rustfmt/clippy, README | готово | `f19462d`, `7f7166c` | CI: fmt, clippy `-D warnings`, build, test |
 | S2 Движок: `engine-cdp` (Chromium через CDP), фикстурные сайты, hostile-page E2E | готово | `b559628`…`ca9b5e0` | 7 E2E + 5 фикстур |
-| S3 Model Gateway: HTTP-транспорт, стриминг, кэш, облачный провайдер, lifecycle llama-server | не начато | — | — |
+| S3 Model Gateway: HTTP-транспорт, SSE-стриминг, кэш, облачный провайдер по ключу, lifecycle llama-server | готово | см. git log `feat(model-gateway)` | 34 unit + 3 live (llama.cpp) + 1 memory |
 | S4 Page Intelligence: извлечение, модель страницы, суммаризация / Q&A / перевод | не начато | — | — |
 | S5 Memory: индексация с эмбеддингами, семантический поиск, управление памятью | не начато | — | — |
 | S6 Agent Runtime: сценарии (≥10), подтверждения, защита от инъекций | не начато | — | — |
@@ -22,9 +22,9 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | S8 Вкладки по задачам, безопасность (фишинг, тёмные паттерны, трекеры) | не начато | — | — |
 | S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | не начато | — | — |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **77 тестов, 0 падений**
-(agent-runtime 15, core-types 6, engine-adapter 1, engine-cdp E2E 7, fixtures 5, memory 9,
-model-gateway 14, page-intelligence 6, policy 14); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **101 тест, 0 падений**
+(agent-runtime 15, core-types 6, engine-adapter 1, engine-cdp E2E 7, fixtures 5, memory 10,
+model-gateway 34 + 3 live, page-intelligence 6, policy 14); `cargo clippy --workspace --all-targets
 --all-features` без предупреждений; `npm test` в `sensor/` — smoke-тест бандла.
 
 ## S1 — Скелет
@@ -120,9 +120,63 @@ Chrome):
 | Запуск Chromium + подключение | часть «холодного старта < 2 с» | ~130 мс | без учёта оболочки |
 | Размер наблюдения | ≤ 4K токенов на шаг агента | 79–254 токенов | |
 
+## S3 — Model Gateway
+
+Сделано (`crates/model-gateway`):
+
+- `OpenAiCompatProvider` — один провайдер для локального `llama-server` (`Locality::Local`) и
+  облачных OpenAI-совместимых эндпоинтов (`::cloud(name, transport, models)` → `Locality::Cloud`).
+  `LlamaServerProvider` оставлен как алиас. Инструменты, `response_format: json_schema`
+  (на llama.cpp → GBNF-грамматика, вывод гарантированно валиден), `tool_calls` из потока
+  собираются по `index`.
+- Стриминг: `ModelProvider::chat_stream` → `ChatStream` из `Delta(String)` и ровно одного
+  `Done(ModelResponse)` с usage (`stream_options.include_usage`). Провайдеры без стриминга
+  получают fallback по умолчанию.
+- `HttpTransport` (`reqwest`, rustls, без default features): JSON POST, SSE-парсер с учётом
+  частичных чанков и `\r\n`, bearer-ключ (не печатается в `Debug`), connect-timeout 5 с для
+  мёртвого sidecar'а. `RoutingTransport` — диспетчер по алиасу модели на процесс.
+- `Gateway` — фасад для остального браузера: маршрутизация по чувствительности (ADR-007),
+  кэш (`MemoryCache` LRU; ключ blake3 от provider+model+messages+tools+schema+max_tokens+temperature;
+  кэшируются только детерминированные запросы без инструментов, t ≤ 0.1), кэш эмбеддингов
+  по тексту (в модель уходят только промахи), лимит параллелизма (`Semaphore`), тайм-аут,
+  журнал `model_calls` через трейт `CallLog` (в приложении — `SqliteCallLog` →
+  `MemoryStore::record_model_call`; агрегат `model_usage()` для будущего UI настроек).
+- `sidecar`: `LlamaSidecar::start(SidecarConfig)` — процесс на `127.0.0.1:<свободный порт>`,
+  `--log-disable` (промпты не попадают в логи), `--jinja`, ожидание `/health == ok`, хвост stderr
+  в сообщении об ошибке, `kill_on_drop`; `SidecarPool::apply(LoadPlan)` исполняет планы
+  `ModelManager` (unload → load), `reap()` убирает упавшие процессы.
+- `browse-desktop models`: конфигурация из окружения (`BROWSE_LLAMA_CHAT_URL`,
+  `BROWSE_LLAMA_EMBED_URL`, `BROWSE_LLAMA_SERVER`+`BROWSE_MODELS_DIR` для спауна,
+  `BROWSE_CLOUD_BASE_URL/API_KEY/MODEL`, `BROWSE_OFFLINE`), таблица маршрутизации по классам,
+  стриминговый smoke-промпт, строки `model_calls`.
+
+Проверка на реальном llama.cpp (b10933, CPU, 4 vCPU; `tests/live_llama.rs`, включается
+переменными окружения, в CI пропускается):
+
+| Метрика | Бюджет §4 | Измерено | Комментарий |
+|---|---|---|---|
+| Первый токен стриминга (Qwen2.5-1.5B Q4_K_M, 28 токенов промпта) | — | 85 мс | CPU; на RTX 4060 с Qwen3-4B ожидаемо ниже |
+| Полный ответ из 2 токенов (без стриминга) | — | 276 мс | |
+| Structured output по JSON-schema | 100 % валидный JSON | `{"city":"Paris","country":"France"}` | грамматика llama.cpp |
+| Эмбеддинги 3 текстов (EmbeddingGemma-300M Q8, 768-dim) | — | 72 мс | cos(похожие)=0.76, cos(разные)=0.45 |
+| Повторный запрос из кэша | — | < 1 мс, модель не вызывается | и для `chat`, и для `chat_stream` |
+| Холодный старт sidecar (1.5B, ctx 1024, CPU) | «первый ответ < 4 с» | 2.0 с до `/health == ok` | Qwen3-4B на NVMe+GPU по ADR-003 ~3 с |
+
+Не сделано / ограничения:
+
+- Кэш ответов персистентен только на уровне трейта: `MemoryCache` живёт в процессе. Постоянный
+  кэш в SQLite появится вместе с индексацией в S5, когда будет понятно, как он инвалидируется
+  при «забыть страницу».
+- Провайдеры Anthropic/Gemini с собственными протоколами не реализованы — OpenAI-совместимые
+  эндпоинты (включая OpenRouter и прокси) покрывают облачный сценарий; учёт `cost_usd` пока `NULL`.
+- Ключ облака берётся из переменной окружения; хранение в системном keychain — в S9 вместе с
+  настройками.
+- `llama-server` в режиме роутера моделей (`/models/load`) не используется: один процесс на модель
+  проще убивать при превышении бюджета VRAM и он изолирует падения.
+
 ## Следующие шаги
 
-S3 (Model Gateway): реальный HTTP-транспорт (`reqwest`), SSE-стриминг, кэш ответов в SQLite,
-OpenAI-совместимый облачный провайдер по ключу, менеджер жизненного цикла `llama-server`;
-проверка на локальном llama.cpp (Qwen2.5-1.5B чат + EmbeddingGemma-300M эмбеддинги — модели,
-которые помещаются в среду без GPU; пресет для RTX 4060 из ADR-003 остаётся целевым).
+S4 (Page Intelligence): извлечение читаемого текста и структурная модель страницы для ИИ из
+наблюдения сенсора + AX-дерева (`engine-cdp::ax_tree`), суммаризация / вопросы по странице /
+перевод через `Gateway` со стримингом и кэшем; проверка на фикстурных страницах с локальной
+моделью; команда `browse-desktop page <url> summarize|ask|translate`.
