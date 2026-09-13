@@ -1,18 +1,19 @@
 //! `browse-desktop` — the desktop binary.
 //!
-//! Increment I0 ships the core wired end-to-end against the mock engine so the
-//! whole pipeline (observe → index → plan → policy → critic → confirm → act →
-//! SQLite journal) runs headlessly. The CEF shell arrives in I1 behind the
-//! `cef` feature.
+//! The core is wired end-to-end against the mock engine so the whole pipeline
+//! (observe → index → plan → policy → critic → confirm → act → SQLite journal)
+//! runs headlessly; `models` exercises the real Model Gateway.
 //!
 //! ```text
 //! browse-desktop demo                 headless red-team demo; confirmations auto-rejected
 //! browse-desktop demo --interactive   ask for confirmations on stdin
 //! browse-desktop demo --dry-run       stop at the first action that would need confirmation
 //! browse-desktop schema-check         apply schema/memory.sql to an in-memory DB and print table counts
+//! browse-desktop models               show model routing and run a streamed smoke prompt (see models.rs)
 //! ```
 
 mod journal;
+mod models;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -37,11 +38,9 @@ async fn main() {
     let result = match args.first().map(String::as_str) {
         Some("demo") => demo(args.iter().any(|a| a == "--interactive"), args.iter().any(|a| a == "--dry-run")).await,
         Some("schema-check") => schema_check(),
+        Some("models") => models::models_command().await,
         _ => {
-            eprintln!("usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check>");
-            if cfg!(feature = "cef") {
-                eprintln!("cef feature enabled, but the CEF backend is not part of increment I0");
-            }
+            eprintln!("usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models>");
             Ok(())
         }
     };
