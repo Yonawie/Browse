@@ -8,6 +8,8 @@ members = [
   "crates/engine-adapter",
   "crates/model-gateway",
   "crates/agent-runtime",
+  "crates/engine-cdp",
+  "crates/fixtures",
   "apps/desktop",
 ]
 
@@ -27,8 +29,17 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 url = "2"
 blake3 = "1"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util", "fs"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-tungstenite = "0.28"
+futures-util = "0.3"
+base64 = "0.22"
+tempfile = "3"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+which = "8"
 
 core-types = { path = "crates/core-types" }
 policy = { path = "crates/policy" }
@@ -37,6 +48,8 @@ memory = { path = "crates/memory" }
 engine-adapter = { path = "crates/engine-adapter" }
 model-gateway = { path = "crates/model-gateway" }
 agent-runtime = { path = "crates/agent-runtime" }
+engine-cdp = { path = "crates/engine-cdp" }
+fixtures = { path = "crates/fixtures" }
 
 [profile.release]
 lto = "thin"
