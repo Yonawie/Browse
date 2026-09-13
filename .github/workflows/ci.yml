@@ -34,13 +34,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
       - name: Build
         run: cargo build --workspace --all-targets
+      # Includes the engine-cdp end-to-end suite, which drives the runner's
+      # preinstalled Chrome headlessly against the local fixture sites and
+      # skips itself when no Chromium-based browser is found.
       - name: Test
         run: cargo test --workspace --all-features
-      - name: Chromium end-to-end (engine-cdp against fixture sites)
-        if: runner.os != 'Windows'
-        env:
-          BROWSE_E2E: "1"
-        run: cargo test -p engine-cdp --all-features -- --ignored --test-threads=1
 
   sensor:
     name: Sensor (TypeScript)
@@ -60,3 +58,7 @@ jobs:
         working-directory: sensor
       - run: npm test
         working-directory: sensor
+      # `engine-cdp` embeds sensor/dist at compile time; the committed bundle
+      # must match the sources so `cargo build` needs no Node toolchain.
+      - name: Committed sensor bundle is up to date
+        run: git diff --exit-code -- sensor/dist
