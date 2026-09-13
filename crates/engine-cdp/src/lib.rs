@@ -48,6 +48,8 @@ pub enum CdpError {
 
 /// Per-call CDP timeout.
 pub const CALL_TIMEOUT_MS: u64 = 60_000;
+/// Network silence that counts as "settled" after a navigation or action.
+const QUIET_WINDOW: Duration = Duration::from_millis(150);
 
 impl From<CdpError> for EngineError {
     fn from(e: CdpError) -> Self {
@@ -340,14 +342,32 @@ impl CdpEngine {
             .await
     }
 
-    async fn wait_idle(&self, session: &str, since: Cursor, timeout: Duration) {
-        let _ = self
-            .conn
-            .wait_for(Some(session), since, timeout, |e| {
-                e.method == "Page.lifecycleEvent"
-                    && (e.params["name"] == "networkIdle" || e.params["name"] == "networkAlmostIdle")
-            })
-            .await;
+    /// Wait until the network has been quiet for [`QUIET_WINDOW`] (or Chromium
+    /// reports `networkIdle`), capped at `max`. Chromium's own idle signal
+    /// needs 500 ms of silence, which would tax every action; a short quiet
+    /// window catches the post-`load` fetches of SPAs at a fraction of the cost.
+    async fn wait_idle(&self, session: &str, since: Cursor, max: Duration) {
+        let deadline = tokio::time::Instant::now() + max;
+        let mut cursor = since;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return;
+            }
+            let hit = self
+                .conn
+                .wait_for(Some(session), cursor, remaining.min(QUIET_WINDOW), |e| {
+                    e.method.starts_with("Network.")
+                        || e.method == "Page.frameStartedNavigating"
+                        || (e.method == "Page.lifecycleEvent" && e.params["name"] == "networkIdle")
+                })
+                .await;
+            match hit {
+                Some(e) if e.method == "Page.lifecycleEvent" => return,
+                Some(e) => cursor = e.seq + 1,
+                None => return,
+            }
+        }
     }
 
     fn map_events(&self, webview: &Id, state: &mut WebViewState, events: Vec<CdpEvent>) -> Vec<EngineEvent> {
