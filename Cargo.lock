@@ -136,6 +136,7 @@ dependencies = [
  "async-trait",
  "core-types",
  "engine-adapter",
+ "engine-cdp",
  "futures-util",
  "memory",
  "model-gateway",

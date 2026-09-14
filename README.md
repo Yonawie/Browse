@@ -21,10 +21,24 @@ binary to override detection); Node ≥ 20 only if you change the sensor.
 
 ```sh
 git clone https://github.com/Yonawie/Browse && cd Browse
-cargo test --workspace --all-features         # 101 tests incl. 7 headless Chromium E2E (~5 s)
+cargo test --workspace --all-features         # 104 tests incl. 7 headless Chromium E2E (~5 s)
 cargo run -p browse-desktop -- demo           # red-team demo of the policy layers (mock engine)
 cargo run -p fixtures                         # serve the fixture sites on http://*.localhost:8765
 ```
+
+### Page Intelligence CLI
+
+Configure a local or optional cloud model as described in [Local models](#local-models), then run one vertical page workflow:
+
+```sh
+cargo run -p browse-desktop -- page https://example.com summarize
+cargo run -p browse-desktop -- page https://example.com ask "What changed?"
+cargo run -p browse-desktop -- page https://example.com translate Russian
+```
+
+The command launches an isolated headless Chromium profile, extracts a locally budgeted observation, and streams the
+answer with source ids such as `[c0]`. Page content is explicitly marked as untrusted data in the model prompt. Private
+pages can only use a local provider; public pages may use a configured cloud endpoint.
 
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
