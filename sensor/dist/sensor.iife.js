@@ -32,7 +32,10 @@ var BrowseSensor = (() => {
     frameId: "main",
     maxInteractive: 150,
     maxContentChars: 24e3,
-    timeBudgetMs: 40
+    // Cold Chromium processes (notably macOS CI runners) can spend more than
+    // 40 ms computing accessibility metadata for even a small form. Keep a
+    // bounded budget, but leave enough headroom to avoid partial observations.
+    timeBudgetMs: 100
   };
   var refs = /* @__PURE__ */ new WeakMap();
   var byRef = /* @__PURE__ */ new Map();

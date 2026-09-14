@@ -109,7 +109,10 @@ export const DEFAULT_OPTIONS: SensorOptions = {
   frameId: "main",
   maxInteractive: 150,
   maxContentChars: 24_000,
-  timeBudgetMs: 40,
+  // Cold Chromium processes (notably macOS CI runners) can spend more than
+  // 40 ms computing accessibility metadata for even a small form. Keep a
+  // bounded budget, but leave enough headroom to avoid partial observations.
+  timeBudgetMs: 100,
 };
 
 // ---------------------------------------------------------------------------
