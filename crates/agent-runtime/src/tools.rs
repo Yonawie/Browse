@@ -282,8 +282,8 @@ fn flatten_text(v: &Value) -> String {
 
 fn target_info(el: &InteractiveElement, obs: &Observation) -> TargetInfo {
     let input_type = el.input_type.clone();
-    let is_submit = el.role == "button" && input_type.as_deref() == Some("submit")
-        || el.role == "button" && (el.name.eq_ignore_ascii_case("submit") || el.consequential_hint);
+    let is_submit = el.role == "button"
+        && (input_type.as_deref() == Some("submit") || el.name.eq_ignore_ascii_case("submit") || el.consequential_hint);
     let form_has_payment_fields = obs.interactive.iter().any(|e| {
         let n = e.name.to_ascii_lowercase();
         e.input_type.as_deref() == Some("cc-number")

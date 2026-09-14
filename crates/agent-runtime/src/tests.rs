@@ -192,11 +192,15 @@ async fn cross_origin_flow_approved_for_session_creates_grant() {
         assert!(matches!(out, StepOutcome::Acted { .. }), "{out:?}");
     }
     assert_eq!(h.confirmer.seen.lock().unwrap().len(), 1, "second identical flow is covered by the grant");
-    assert!(s.grants.has(
-        policy::GrantKind::CrossOriginFlow,
-        "https://shop.example->https://notes.example",
-        s.started_at + 1
-    ));
+    let grant = s
+        .grants
+        .iter()
+        .find(|grant| {
+            grant.kind == policy::GrantKind::CrossOriginFlow
+                && grant.object == "https://shop.example->https://notes.example"
+        })
+        .expect("approved cross-origin flow creates a session grant");
+    assert!(grant.active_at(grant.granted_at));
     let actions = h.engine.actions.lock().unwrap().clone();
     match &actions[1].1 {
         engine_adapter::Action::Type { text, .. } => assert_eq!(text, "Promo code today: SAVE10"),

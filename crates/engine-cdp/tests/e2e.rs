@@ -163,7 +163,9 @@ e2e!(fill_contact_form_with_trusted_input, |h| {
 });
 
 e2e!(masked_fields_are_never_typed_into, |h| {
-    let wv = h.engine.create_webview(user_opts()).await.unwrap();
+    // Keep this test isolated from the session-import test, which signs into the
+    // shared user profile and may run in parallel.
+    let wv = h.engine.create_webview(WebViewOptions::agent("masked-fields")).await.unwrap();
 
     h.engine.navigate(&wv, &h.fx.url("login", "/")).await.unwrap();
     let obs = h.engine.observe(&wv).await.unwrap();
