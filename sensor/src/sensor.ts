@@ -101,7 +101,7 @@ export interface SensorOptions {
   maxInteractive: number;
   /** Hard cap on content characters before chunking. */
   maxContentChars: number;
-  /** Time box in ms for one snapshot; partial snapshots are marked in `page_kind`. */
+  /** Time box in ms for readable-content extraction after interactive elements. */
   timeBudgetMs: number;
 }
 
@@ -466,13 +466,14 @@ function fnv1a(s: string): string {
 
 export function snapshot(opts: Partial<SensorOptions> = {}): Observation {
   const o = { ...DEFAULT_OPTIONS, ...opts };
-  const t0 = performance.now();
-  const deadline = t0 + o.timeBudgetMs;
 
+  // Interactive controls are security- and action-critical: returning a
+  // partial form can hide a submit button or a sensitive field. Always scan
+  // to the explicit element cap; time-box only the larger text extraction.
   const interactive: InteractiveElement[] = [];
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTOR);
   for (const el of Array.from(candidates)) {
-    if (interactive.length >= o.maxInteractive || performance.now() > deadline) break;
+    if (interactive.length >= o.maxInteractive) break;
     if (!isVisible(el)) continue;
     const role = roleOf(el);
     const name = accessibleName(el);
@@ -504,6 +505,7 @@ export function snapshot(opts: Partial<SensorOptions> = {}): Observation {
     interactive.push(e);
   }
 
+  const deadline = performance.now() + o.timeBudgetMs;
   const hidden: string[] = [];
   const root = document.querySelector("main,[role=main],article") ?? document.body;
   const blocks = collectContent(root, hidden, deadline, o.maxContentChars);

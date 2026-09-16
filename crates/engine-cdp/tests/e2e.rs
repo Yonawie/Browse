@@ -76,6 +76,20 @@ fn content_text(obs: &Observation) -> String {
     obs.content.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join("\n")
 }
 
+e2e!(interactive_controls_survive_expired_content_budget, |h| {
+    let wv = h.engine.create_webview(WebViewOptions::agent("budget-regression")).await.unwrap();
+    h.engine.navigate(&wv, &h.fx.url("forms", "/contact")).await.unwrap();
+    // A test-only main-world copy lets us override sensor options without
+    // exposing the production isolated-world API to page scripts.
+    let expression = format!("{}; JSON.stringify(BrowseSensor.snapshot({{timeBudgetMs: -1}}))", engine_cdp::SENSOR_JS);
+    let result = h.engine.evaluate(&wv, &expression).await.unwrap();
+    let obs: Observation = serde_json::from_str(result.as_str().unwrap()).unwrap();
+    find(&obs, "textbox", "email");
+    assert!(obs.interactive.iter().any(|element| element.role == "checkbox"));
+    assert!(obs.interactive.iter().any(|element| element.role == "button"));
+    h.engine.close_webview(&wv).await.unwrap();
+});
+
 e2e!(observe_catalog_page, |h| {
     let wv = h.engine.create_webview(user_opts()).await.unwrap();
     h.engine.navigate(&wv, &h.fx.url("shop", "/")).await.unwrap();

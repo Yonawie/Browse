@@ -316,12 +316,10 @@ var BrowseSensor = (() => {
   }
   function snapshot(opts = {}) {
     const o = { ...DEFAULT_OPTIONS, ...opts };
-    const t0 = performance.now();
-    const deadline = t0 + o.timeBudgetMs;
     const interactive = [];
     const candidates = document.querySelectorAll(INTERACTIVE_SELECTOR);
     for (const el of Array.from(candidates)) {
-      if (interactive.length >= o.maxInteractive || performance.now() > deadline) break;
+      if (interactive.length >= o.maxInteractive) break;
       if (!isVisible(el)) continue;
       const role = roleOf(el);
       const name = accessibleName(el);
@@ -352,6 +350,7 @@ var BrowseSensor = (() => {
       if (consequentialHint(el, role, name)) e.consequential_hint = true;
       interactive.push(e);
     }
+    const deadline = performance.now() + o.timeBudgetMs;
     const hidden = [];
     const root = document.querySelector("main,[role=main],article") ?? document.body;
     const blocks = collectContent(root, hidden, deadline, o.maxContentChars);
