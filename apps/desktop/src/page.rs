@@ -1,7 +1,9 @@
 //! Vertical Page Intelligence slice: observe a real page and ask the configured
 //! model to summarize, answer a question, or translate its readable content.
 
+use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use core_types::{ContentChunk, ModelTier, Sensitivity};
 use engine_adapter::{EngineAdapter, WebViewOptions};
@@ -9,7 +11,7 @@ use engine_cdp::launcher::LaunchOptions;
 use engine_cdp::CdpEngine;
 use futures_util::StreamExt;
 use memory::MemoryStore;
-use model_gateway::{Message, ModelRequest, StreamEvent};
+use model_gateway::{ChatStream, Message, ModelRequest, ModelResponse, StreamEvent};
 use page_intelligence::{trim_observation, ObservationBudget};
 
 use crate::models;
@@ -56,31 +58,53 @@ pub async fn page_command(args: &[String]) -> Result<(), Box<dyn std::error::Err
     request.max_tokens = Some(1_024);
     request.temperature = Some(0.1);
 
-    let (mut stream, route) = configured.gateway.chat_stream(action.purpose(), &request).await?;
-    eprintln!("route: {} ({:?})", route.provider, route.locality);
-    while let Some(event) = stream.next().await {
-        match event? {
-            StreamEvent::Delta(text) => {
-                print!("{text}");
-                use std::io::Write;
-                std::io::stdout().flush()?;
-            }
-            StreamEvent::Done(response) => {
-                if response.content.is_empty() {
-                    println!();
-                }
-                eprintln!(
-                    "\nmodel={} input_tokens={} output_tokens={}",
-                    response.model, response.usage.prompt_tokens, response.usage.completion_tokens
-                );
-            }
-        }
+    let result = async {
+        let (stream, route) = configured.gateway.chat_stream(action.purpose(), &request).await?;
+        eprintln!("route: {} ({:?})", route.provider, route.locality);
+        let response = write_response(stream, &mut std::io::stdout(), Duration::from_secs(60)).await?;
+        eprintln!(
+            "model={} input_tokens={} output_tokens={}",
+            response.model, response.usage.prompt_tokens, response.usage.completion_tokens
+        );
+        Ok::<_, Box<dyn std::error::Error>>(())
     }
-    engine.close_webview(&webview).await?;
+    .await;
+    let close_result = engine.close_webview(&webview).await;
     for sidecar in configured.sidecars {
         sidecar.stop().await;
     }
+    result?;
+    close_result?;
     Ok(())
+}
+
+async fn write_response(
+    mut stream: ChatStream,
+    output: &mut impl Write,
+    idle_timeout: Duration,
+) -> Result<ModelResponse, Box<dyn std::error::Error>> {
+    let mut wrote_text = false;
+    loop {
+        let event = tokio::time::timeout(idle_timeout, stream.next())
+            .await
+            .map_err(|_| "model response timed out while waiting for the next event")?
+            .ok_or("model response ended without completion; output may be incomplete")?;
+        match event? {
+            StreamEvent::Delta(text) => {
+                output.write_all(text.as_bytes())?;
+                output.flush()?;
+                wrote_text |= !text.is_empty();
+            }
+            StreamEvent::Done(response) => {
+                if !wrote_text {
+                    output.write_all(response.content.as_bytes())?;
+                }
+                writeln!(output)?;
+                output.flush()?;
+                return Ok(response);
+            }
+        }
+    }
 }
 
 impl PageAction {
@@ -159,6 +183,45 @@ fn user_prompt(action: &PageAction, url: &str, title: &str, context: &str) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completed_stream_prints_answer_once_with_or_without_deltas() {
+        for with_delta in [false, true] {
+            let response = ModelResponse {
+                content: "answer".into(),
+                tool_calls: vec![],
+                usage: model_gateway::Usage::default(),
+                provider: "test".into(),
+                model: "test".into(),
+                locality: core_types::Locality::Local,
+            };
+            let mut events = Vec::new();
+            if with_delta {
+                events.push(Ok(StreamEvent::Delta("answer".into())));
+            }
+            events.push(Ok(StreamEvent::Done(response.clone())));
+            let stream: ChatStream = Box::pin(futures_util::stream::iter(events));
+            let mut output = Vec::new();
+            assert_eq!(write_response(stream, &mut output, Duration::from_secs(1)).await.unwrap(), response);
+            assert_eq!(output, b"answer\n");
+        }
+    }
+
+    #[tokio::test]
+    async fn incomplete_stream_is_an_error() {
+        let stream: ChatStream = Box::pin(futures_util::stream::iter(vec![Ok(StreamEvent::Delta("partial".into()))]));
+        let mut output = Vec::new();
+        let error = write_response(stream, &mut output, Duration::from_secs(1)).await.unwrap_err();
+        assert!(error.to_string().contains("without completion"));
+        assert_eq!(output, b"partial");
+    }
+
+    #[tokio::test]
+    async fn stalled_stream_times_out() {
+        let stream: ChatStream = Box::pin(futures_util::stream::pending());
+        let error = write_response(stream, &mut Vec::new(), Duration::from_millis(1)).await.unwrap_err();
+        assert!(error.to_string().contains("timed out"));
+    }
 
     fn chunk(id: &str, text: &str) -> ContentChunk {
         ContentChunk {
