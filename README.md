@@ -45,13 +45,24 @@ cargo run -p browse-desktop -- page https://example.com ask "What changed?"
 cargo run -p browse-desktop -- page https://example.com translate Russian
 ```
 
-The command launches an isolated headless Chromium profile, extracts a locally budgeted observation, and streams the
-answer, asking the model to cite source ids such as `[c0]` (citations are not automatically verified).
+The command launches an isolated headless Chromium profile, extracts a locally budgeted observation, streams the
+answer with source citations `[c0]`, and automatically verifies citation validity against the extracted page chunks.
 Page content, title, and URL are encoded as untrusted JSON data in the model prompt; this is not a guarantee against prompt injection.
 Private pages can only use a local provider. Public-page summaries may use a configured cloud endpoint.
 Free-form questions and translation requests are classified at least Personal and do not opt into cloud routing,
 so these commands require a local provider. Live inference requires a separately configured model server;
 tests that skip without one do not validate model answer quality.
+
+### Memory & Search CLI
+
+Index web pages into local SQLite memory, run hybrid semantic searches (lexical FTS5 + vector embeddings) and manage history erasure:
+
+```sh
+cargo run -p browse-desktop -- memory stats
+cargo run -p browse-desktop -- memory index https://example.com
+cargo run -p browse-desktop -- memory search "search query" [--domain example.com]
+cargo run -p browse-desktop -- memory forget example.com
+```
 
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
