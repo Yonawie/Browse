@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browse — AI-Native Smart Browser</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app" class="browser-window">
+    <!-- Top Tab Bar -->
+    <header class="tab-strip" id="tab-strip">
+      <div class="tabs-container" id="tabs-list">
+        <!-- Dynamically rendered tabs -->
+      </div>
+      <button class="btn-icon new-tab-btn" id="new-tab-btn" title="New Tab">+</button>
+      <div class="window-controls">
+        <span class="badge offline-badge" id="privacy-badge">Zero Telemetry</span>
+      </div>
+    </header>
+
+    <!-- Navigation / Omnibox Bar -->
+    <div class="navigation-bar">
+      <div class="nav-buttons">
+        <button class="btn-icon" id="btn-back" title="Back">←</button>
+        <button class="btn-icon" id="btn-forward" title="Forward">→</button>
+        <button class="btn-icon" id="btn-reload" title="Reload">⟳</button>
+      </div>
+
+      <div class="omnibox-container">
+        <span class="security-indicator" id="security-indicator" title="Page Security">🔒</span>
+        <input type="text" id="omnibox-input" placeholder="Search web, enter URL, or ask a question..." autocomplete="off">
+        <span class="sensitivity-tag" id="sensitivity-tag" title="Data Sensitivity">Public</span>
+      </div>
+
+      <div class="action-buttons">
+        <button class="btn-icon assistant-toggle" id="btn-toggle-sidebar" title="Toggle AI Sidebar">
+          <span class="ai-sparkle">✦</span> AI Panel
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Workspace: Content + AI Sidebar -->
+    <main class="workspace">
+      <!-- Web View Container -->
+      <section class="viewport-pane" id="viewport-pane">
+        <div class="webview-header" id="webview-header">
+          <span class="current-page-title" id="page-title">Welcome to Browse</span>
+          <span class="profile-indicator" id="profile-indicator">Profile: User</span>
+        </div>
+        <div class="webview-container" id="webview-frame-container">
+          <!-- Active page content or iframe / placeholder -->
+          <iframe id="web-frame" src="about:blank" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+        </div>
+      </section>
+
+      <!-- AI Assistant Sidebar -->
+      <aside class="sidebar-pane" id="sidebar-pane">
+        <!-- Sidebar Navigation Tabs -->
+        <nav class="sidebar-nav">
+          <button class="sidebar-tab active" data-tab="intelligence">Page Intelligence</button>
+          <button class="sidebar-tab" data-tab="agent">Agent Tasks</button>
+          <button class="sidebar-tab" data-tab="memory">Memory & Search</button>
+          <button class="sidebar-tab" data-tab="settings">AI Settings</button>
+        </nav>
+
+        <!-- Tab 1: Page Intelligence -->
+        <div class="sidebar-content active" id="tab-intelligence">
+          <div class="quick-actions">
+            <button class="btn-chip" id="chip-summarize">✦ Summarize Page</button>
+            <button class="btn-chip" id="chip-keypoints">✦ Key Facts</button>
+            <button class="btn-chip" id="chip-translate">✦ Translate</button>
+          </div>
+
+          <div class="assistant-chat-stream" id="intelligence-output">
+            <div class="chat-placeholder">
+              <p>Ask anything about the current page, or click <strong>Summarize</strong> above.</p>
+              <small>All page data is treated as untrusted. Source citations [c0] are automatically verified.</small>
+            </div>
+          </div>
+
+          <div class="chat-input-bar">
+            <input type="text" id="ask-input" placeholder="Ask a question about this page...">
+            <button class="btn-primary" id="btn-send-ask">Ask</button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Agent Runtime & Tasks -->
+        <div class="sidebar-content" id="tab-agent">
+          <div class="agent-setup-card">
+            <label for="agent-task-input">Autonomous Goal / Task:</label>
+            <textarea id="agent-task-input" rows="2" placeholder="e.g. Find all shoes under $100 and add to cart"></textarea>
+            
+            <div class="agent-options">
+              <label class="checkbox-label">
+                <input type="checkbox" id="agent-dry-run" checked> Dry-Run (stops before irreversible actions)
+              </label>
+            </div>
+
+            <div class="agent-actions">
+              <button class="btn-primary" id="btn-start-agent">Run Agent</button>
+              <button class="btn-danger" id="btn-stop-agent" disabled>Stop</button>
+            </div>
+          </div>
+
+          <!-- Pending Confirmation Card -->
+          <div class="confirmation-card hidden" id="confirmation-card">
+            <div class="confirmation-header">
+              <span class="warning-icon">⚠</span>
+              <strong>Action Confirmation Required</strong>
+            </div>
+            <p class="confirmation-preview" id="conf-preview"></p>
+            <p class="confirmation-reason" id="conf-reason"></p>
+            <div class="confirmation-buttons">
+              <button class="btn-success" id="btn-conf-approve">Approve</button>
+              <button class="btn-outline" id="btn-conf-session">Approve for Session</button>
+              <button class="btn-danger" id="btn-conf-reject">Reject</button>
+            </div>
+          </div>
+
+          <!-- Live Step Audit Trail -->
+          <div class="agent-timeline" id="agent-timeline">
+            <h4>Execution Audit Trail</h4>
+            <div class="timeline-feed" id="timeline-feed">
+              <div class="timeline-empty">No active agent task.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Memory & Hybrid Search -->
+        <div class="sidebar-content" id="tab-memory">
+          <div class="memory-search-bar">
+            <input type="text" id="memory-search-input" placeholder="Search your browsing memory & facts...">
+            <button class="btn-primary" id="btn-memory-search">Search</button>
+          </div>
+
+          <div class="memory-stats-badge" id="memory-stats-badge">
+            Loading memory stats...
+          </div>
+
+          <div class="memory-results" id="memory-results">
+            <!-- Results will appear here -->
+          </div>
+        </div>
+
+        <!-- Tab 4: AI Settings & Routing -->
+        <div class="sidebar-content" id="tab-settings">
+          <div class="settings-group">
+            <h4>Local Inference (llama.cpp)</h4>
+            <p class="settings-hint">Zero data leaves your device. Models run as background sidecars.</p>
+            <div class="setting-item">
+              <label>Chat Server URL:</label>
+              <input type="text" id="setting-llama-chat" value="http://127.0.0.1:8081" readonly>
+            </div>
+            <div class="setting-item">
+              <label>Embeddings URL:</label>
+              <input type="text" id="setting-llama-embed" value="http://127.0.0.1:8082" readonly>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h4>Optional Cloud API (BYOK)</h4>
+            <p class="settings-hint">Used only for Public pages or with per-request user consent. Never telemetred.</p>
+            <div class="setting-item">
+              <label>Endpoint URL:</label>
+              <input type="text" id="setting-cloud-url" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="setting-item">
+              <label>API Key:</label>
+              <input type="password" id="setting-cloud-key" placeholder="sk-...">
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
