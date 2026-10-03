@@ -15,6 +15,7 @@
       </div>
       <button class="btn-icon new-tab-btn" id="new-tab-btn" title="New Tab">+</button>
       <div class="window-controls">
+        <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
         <span class="badge offline-badge" id="privacy-badge">Zero Telemetry</span>
       </div>
     </header>
@@ -200,8 +201,41 @@
             </div>
           </div>
         </div>
-      </aside>
-    </main>
+    <!-- First-Run Onboarding Modal -->
+    <div class="onboarding-overlay hidden" id="onboarding-modal">
+      <div class="onboarding-card">
+        <div class="onboarding-header">
+          <h2>✦ Welcome to Browse</h2>
+          <p class="subtitle">The Autonomous, Privacy-First, AI-Native Browser</p>
+        </div>
+        <div class="onboarding-body">
+          <div class="feature-item">
+            <span class="feature-icon">🛡️</span>
+            <div>
+              <strong>Architectural Security</strong>
+              <p>Hard deterministic policy gates prevent indirect prompt injections, phishing, and secret leaks before actions touch the web.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">⚡</span>
+            <div>
+              <strong>Local-First Intelligence</strong>
+              <p>Page intelligence, hybrid BM25+vector memory, and LLM reasoning run locally via llama.cpp sidecar. Zero telemetry is collected.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">⌨️</span>
+            <div>
+              <strong>Productivity Keyboard Shortcuts</strong>
+              <p>Ctrl+T (New Tab), Ctrl+W (Close Tab), Ctrl+L (Omnibox), Ctrl+B (AI Sidebar), Ctrl+1..9 (Switch Tabs).</p>
+            </div>
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-primary" id="btn-finish-onboarding">Get Started with Browse</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js"></script>

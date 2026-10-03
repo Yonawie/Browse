@@ -73,6 +73,29 @@ cargo run -p browse-desktop -- run https://example.com "find pricing plans" --dr
 cargo run -p browse-desktop -- run https://example.com "sign up for newsletter" --interactive
 ```
 
+### WebUI Shell & Server (Browser UI)
+
+Launch the complete AI-native browser graphical shell with tab strip, task groups, omnibox, and AI assistant panel:
+
+```sh
+cargo run -p browse-desktop -- shell                     # serves WebUI and launches local browser
+cargo run -p browse-desktop -- shell --port 8080 --no-open
+```
+
+Features:
+- **Task-Based Tab Strip:** Automatic tab clustering by topic (`[Shopping]`, `[Documentation]`, `[Development]`).
+- **Omnibox & Security Tag:** Natural language query dispatcher and real-time security shield tag (`Safe 🛡️` / `Suspicious ⚠` / `Dangerous 🚨`).
+- **AI Assistant Panel:** Page summarization, citation inspection, autonomous agent runner with action confirmations, and local SQLite memory search.
+- **Shortcuts & Themes:** `Ctrl+T` (New tab), `Ctrl+W` (Close), `Ctrl+L` (Omnibox), `Ctrl+B` (AI sidebar), `Ctrl+1..9` (Tab switch), Light/Dark theme toggle.
+
+### Safety & Phishing Inspection CLI
+
+Evaluate any URL and page content for homoglyph attacks, brand spoofing, and deceptive design patterns (FTC / EU DSA compliance):
+
+```sh
+cargo run -p browse-desktop -- inspect-safety https://paypal-security-update.com/login --text "Only 2 items left! Renews automatically at $49/mo."
+```
+
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
 demo) or `http://hostile.localhost:8765` in any browser; `*.localhost` resolves

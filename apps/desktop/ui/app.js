@@ -58,6 +58,77 @@ class BrowseShell {
 
   initEvents() {
     this.newTabBtn.addEventListener('click', () => this.createTab('https://example.com'));
+
+    // Theme toggle & persistence
+    const themeBtn = document.getElementById('btn-toggle-theme');
+    const savedTheme = localStorage.getItem('browse_theme') || 'dark';
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-theme');
+      if (themeBtn) themeBtn.textContent = '☀️';
+    }
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const isLight = document.body.classList.toggle('light-theme');
+        themeBtn.textContent = isLight ? '☀️' : '🌙';
+        localStorage.setItem('browse_theme', isLight ? 'light' : 'dark');
+      });
+    }
+
+    // First-run onboarding wizard
+    const onboardingModal = document.getElementById('onboarding-modal');
+    const finishOnboardingBtn = document.getElementById('btn-finish-onboarding');
+    const hasOnboarded = localStorage.getItem('browse_onboarded');
+    if (!hasOnboarded && onboardingModal) {
+      onboardingModal.classList.remove('hidden');
+    }
+    if (finishOnboardingBtn) {
+      finishOnboardingBtn.addEventListener('click', () => {
+        localStorage.setItem('browse_onboarded', 'true');
+        if (onboardingModal) onboardingModal.classList.add('hidden');
+      });
+    }
+
+    // Global keyboard shortcuts (Phase S9)
+    window.addEventListener('keydown', (e) => {
+      const isCmd = e.ctrlKey || e.metaKey;
+
+      if (isCmd && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        this.createTab('https://example.com');
+      } else if (isCmd && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        if (this.activeTabId) this.closeTab(this.activeTabId);
+      } else if (isCmd && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        this.omnibox.focus();
+        this.omnibox.select();
+      } else if (isCmd && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        this.sidebarPane.classList.toggle('collapsed');
+      } else if (isCmd && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < this.tabs.length) {
+          e.preventDefault();
+          this.switchTab(this.tabs[idx].id);
+        }
+      } else if (isCmd && e.key === 'Tab') {
+        e.preventDefault();
+        const curIdx = this.tabs.findIndex(t => t.id === this.activeTabId);
+        if (curIdx !== -1 && this.tabs.length > 1) {
+          const nextIdx = (curIdx + (e.shiftKey ? this.tabs.length - 1 : 1)) % this.tabs.length;
+          this.switchTab(this.tabs[nextIdx].id);
+        }
+      } else if (e.key === 'Escape') {
+        if (!this.confirmationCard.classList.contains('hidden')) {
+          this.respondConfirmation('rejected');
+        } else if (onboardingModal && !onboardingModal.classList.contains('hidden')) {
+          onboardingModal.classList.add('hidden');
+          localStorage.setItem('browse_onboarded', 'true');
+        } else {
+          this.omnibox.blur();
+        }
+      }
+    });
     
     this.omnibox.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
