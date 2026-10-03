@@ -12,7 +12,7 @@ use engine_cdp::CdpEngine;
 use futures_util::StreamExt;
 use memory::MemoryStore;
 use model_gateway::{ChatStream, Message, ModelRequest, ModelResponse, StreamEvent};
-use page_intelligence::{trim_observation, ObservationBudget};
+use page_intelligence::{format_citation_report, trim_observation, verify_citations, ObservationBudget};
 
 use crate::models;
 
@@ -66,6 +66,10 @@ pub async fn page_command(args: &[String]) -> Result<(), Box<dyn std::error::Err
             "model={} input_tokens={} output_tokens={}",
             response.model, response.usage.prompt_tokens, response.usage.completion_tokens
         );
+        let report = verify_citations(&response.content, &observation.content);
+        if !report.cited_ids.is_empty() {
+            println!("\n{}", format_citation_report(&report));
+        }
         Ok::<_, Box<dyn std::error::Error>>(())
     }
     .await;
@@ -84,6 +88,7 @@ async fn write_response(
     idle_timeout: Duration,
 ) -> Result<ModelResponse, Box<dyn std::error::Error>> {
     let mut wrote_text = false;
+    let mut accumulated = String::new();
     loop {
         let event = tokio::time::timeout(idle_timeout, stream.next())
             .await
@@ -93,11 +98,14 @@ async fn write_response(
             StreamEvent::Delta(text) => {
                 output.write_all(text.as_bytes())?;
                 output.flush()?;
+                accumulated.push_str(&text);
                 wrote_text |= !text.is_empty();
             }
-            StreamEvent::Done(response) => {
+            StreamEvent::Done(mut response) => {
                 if !wrote_text {
                     output.write_all(response.content.as_bytes())?;
+                } else if response.content.is_empty() {
+                    response.content = accumulated;
                 }
                 writeln!(output)?;
                 output.flush()?;
@@ -297,5 +305,15 @@ mod tests {
             assert!(parse_args(&["https://example.com".into(), action.into(), "  ".into()]).is_err());
         }
         assert!(build_context(&[chunk("c0", " \n ")]).is_err());
+    }
+
+    #[test]
+    fn verifies_citations_in_page_response() {
+        let chunks = vec![chunk("c0", "Browse is private and local."), chunk("c1", "Supports llama.cpp.")];
+        let report = verify_citations("Browse is private [c0] and supports llama.cpp [c1]. Also [c42].", &chunks);
+        assert_eq!(report.verified.len(), 2);
+        assert_eq!(report.hallucinated, vec!["c42"]);
+        let text = format_citation_report(&report);
+        assert!(text.contains("2 verified, 1 invalid"));
     }
 }

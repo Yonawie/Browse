@@ -4,11 +4,13 @@
 
 pub mod budget;
 pub mod chunker;
+pub mod citations;
 pub mod injection;
 pub mod page_kind;
 
 pub use budget::{trim_observation, ObservationBudget};
 pub use chunker::{chunk_text, Chunk, ChunkerConfig};
+pub use citations::{extract_citation_ids, format_citation_report, verify_citations, CitationMatch, CitationReport};
 pub use injection::injection_signal;
 pub use page_kind::detect_page_kind;
 
