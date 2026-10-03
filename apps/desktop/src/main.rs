@@ -14,6 +14,7 @@
 //! ```
 
 mod journal;
+mod memory_cmd;
 mod models;
 mod page;
 
@@ -42,9 +43,10 @@ async fn main() {
         Some("schema-check") => schema_check(),
         Some("models") => models::models_command().await,
         Some("page") => page::page_command(&args[1..]).await,
+        Some("memory") => memory_cmd::memory_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <question> | translate <language>>>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>>>"
             );
             Ok(())
         }

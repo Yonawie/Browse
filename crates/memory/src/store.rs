@@ -177,6 +177,10 @@ impl MemoryStore {
         Ok(self.conn.execute("DELETE FROM pages WHERE id = ?1", params![page_id])?)
     }
 
+    pub fn forget_url(&self, url: &str) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM pages WHERE url = ?1", params![url])?)
+    }
+
     pub fn forget_domain(&self, domain: &str) -> Result<usize> {
         Ok(self.conn.execute("DELETE FROM pages WHERE domain = ?1", params![domain])?)
     }
