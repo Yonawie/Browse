@@ -1,0 +1,16 @@
+[package]
+name = "fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local fixture web sites for end-to-end tests (no external network)"
+
+[[bin]]
+name = "fixtures"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true

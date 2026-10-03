@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux GUI dependencies (WebKitGTK for the shell)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features
+      - name: Build
+        run: cargo build --workspace --all-targets
+      # Includes the engine-cdp end-to-end suite, which drives the runner's
+      # preinstalled Chrome headlessly against the local fixture sites and
+      # skips itself when no Chromium-based browser is found.
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  sensor:
+    name: Sensor (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sensor/package-lock.json
+      - run: npm ci
+        working-directory: sensor
+      - run: npm run typecheck
+        working-directory: sensor
+      - run: npm run build
+        working-directory: sensor
+      - run: npm test
+        working-directory: sensor
+      # `engine-cdp` embeds sensor/dist at compile time; the committed bundle
+      # must match the sources so `cargo build` needs no Node toolchain.
+      - name: Committed sensor bundle is up to date
+        run: git diff --exit-code -- sensor/dist

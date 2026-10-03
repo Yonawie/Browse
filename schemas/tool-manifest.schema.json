@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browse.dev/schemas/tool-manifest.schema.json",
+  "title": "Browse Agent Tool Manifest",
+  "description": "Declares a tool the agent may call. Built-in tools, WASM plugins and external MCP servers all use this manifest so PolicyEngine can treat them uniformly (ADR-005, ADR-008).",
+  "type": "object",
+  "required": ["name", "version", "description", "runtime", "input_schema", "capabilities", "safety"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$",
+      "description": "Stable identifier exposed to the model, e.g. `click`, `github_create_issue`."
+    },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Model-facing description. Treated as trusted only for built-in tools; plugin descriptions are shown to the user at install."
+    },
+    "runtime": {
+      "type": "string",
+      "enum": ["builtin", "wasm", "mcp_stdio"],
+      "description": "Where the tool executes. `mcp_stdio` requires explicit user installation and is per-task enabled."
+    },
+    "entrypoint": {
+      "type": "string",
+      "description": "Path to .wasm component or MCP command line. Absent for builtin."
+    },
+    "input_schema": {
+      "type": "object",
+      "description": "JSON Schema (draft 2020-12) of the arguments object. Each property may carry `x-browse` annotations (see $defs/argumentAnnotation).",
+      "required": ["type", "properties"],
+      "properties": {
+        "type": { "const": "object" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "x-browse": { "$ref": "#/$defs/argumentAnnotation" }
+            }
+          }
+        },
+        "required": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "type": "object" },
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "personal", "private"],
+          "description": "Sensitivity class assigned to the tool's output when it re-enters the model context."
+        },
+        "untrusted_content": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, output is labelled as untrusted data (like page content). Mirrors WebMCP `untrustedContentHint`."
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Least-privilege capabilities the tool needs. The runtime denies anything not listed. Shown to the user at install/enable time.",
+      "items": {
+        "type": "string",
+        "pattern": "^(browser:(observe|act|navigate|tabs|profile_readonly)(:[^\\s]+)?|net:[a-z0-9.\\-*]+(:\\d+)?|fs:(read|write):[^\\s]+|clipboard:(read|write)|memory:(read|write)|model:(fast|smart|vision|embed)|os:notify)$"
+      },
+      "uniqueItems": true
+    },
+    "safety": {
+      "type": "object",
+      "required": ["read_only", "consequential"],
+      "additionalProperties": false,
+      "properties": {
+        "read_only": {
+          "type": "boolean",
+          "description": "Tool has no side effects on the page, device or network state. Enables auto-allow within scope."
+        },
+        "consequential": {
+          "type": "boolean",
+          "description": "Tool performs a real-world / irreversible action (pay, send, delete, publish, upload). Always requires user confirmation with preview (ADR-005 §6). Mirrors WebMCP `consequentialHint`."
+        },
+        "consequential_when": {
+          "type": "array",
+          "description": "Optional deterministic predicates that make an otherwise neutral tool consequential, e.g. `click` on a submit button in a form with payment fields.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "target_is_submit",
+              "target_text_matches_consequential_lexicon",
+              "form_has_payment_fields",
+              "form_has_file_upload",
+              "navigates_to_checkout_like_url",
+              "deletes_or_publishes"
+            ]
+          }
+        },
+        "requires_dev_mode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Only available when the user has enabled dev mode (e.g. localhost access, browser-mcp)."
+        },
+        "max_calls_per_session": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "preview_template": {
+          "type": "string",
+          "description": "Template for the confirmation preview, e.g. `Click \"{{target.name}}\" on {{target.origin}}`."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "argumentAnnotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ref", "obs_id", "mem_id", "url", "free_text", "enum", "number"],
+          "description": "`ref`/`obs_id`/`mem_id` are references into runtime-owned data (provenance is then known exactly). `free_text` is model-authored text and is only accepted where `free_text_ok` is true."
+        },
+        "free_text_ok": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether model-authored free text may be passed. Fields like passwords or payment numbers must never set this."
+        },
+        "allowed_provenance": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["user", "memory", "model", "origin_same", "origin_other"] },
+          "description": "Provenance labels accepted without confirmation. `origin_other` (data read on another origin) always triggers a cross-origin flow confirmation unless a grant exists (ADR-005 §3)."
+        },
+        "secret_forbidden": {
+          "type": "boolean",
+          "default": true,
+          "description": "Values labelled `secret` are rejected before the model ever sees them."
+        }
+      }
+    }
+  }
+}

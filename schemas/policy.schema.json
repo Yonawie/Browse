@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browse.dev/schemas/policy.schema.json",
+  "title": "Browse Policy Configuration",
+  "description": "User/admin-editable policy file (browser://ai → Policy). Everything here is enforced by the `policy` crate deterministically. Defaults are the secure ones.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "offline_mode": {
+      "type": "boolean",
+      "default": false,
+      "description": "Disables every non-local model provider and all outbound connections of the AI layer."
+    },
+    "telemetry": {
+      "const": false,
+      "description": "There is no telemetry. The key exists so that a config diff makes it obvious if anyone ever tries to add it."
+    },
+    "providers": {
+      "type": "object",
+      "description": "Enabled providers by role tier. Local providers are always allowed; cloud providers are off unless listed.",
+      "additionalProperties": false,
+      "properties": {
+        "local": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["llama-server", "ollama", "openai-compatible-local", "apple-fm", "onnx"] },
+          "default": ["llama-server", "onnx"]
+        },
+        "cloud": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["openai", "anthropic", "gemini", "openrouter", "openai-compatible-remote"] },
+          "default": []
+        }
+      }
+    },
+    "sensitivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cloud_allowed_classes": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["public", "personal"] },
+          "default": ["public"],
+          "description": "`private` and `secret` are never cloud-eligible; not configurable."
+        },
+        "private_domains": {
+          "type": "array",
+          "description": "Domains always classified `private` (mail, banking, health, messengers). Prepopulated.",
+          "items": { "type": "string" }
+        },
+        "public_override_domains": {
+          "type": "array",
+          "description": "Domains the user explicitly downgraded to `public` despite a session cookie (e.g. their own public wiki).",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "never_remember_domains": { "type": "array", "items": { "type": "string" } },
+        "index_private_windows": { "const": false },
+        "retention_days": { "type": ["integer", "null"], "minimum": 1, "default": null },
+        "embed_only_when_idle": { "type": "boolean", "default": true },
+        "embed_only_on_ac_power": { "type": "boolean", "default": false },
+        "max_db_size_mb": { "type": "integer", "minimum": 100, "default": 2048 }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false, "description": "Agentic actions are opt-in." },
+        "default_profile": { "type": "string", "enum": ["isolated"], "default": "isolated" },
+        "site_trust": {
+          "type": "string",
+          "enum": ["strict", "balanced"],
+          "default": "strict",
+          "description": "`strict`: confirm on every new origin. `balanced`: origins in the declared scope are auto-allowed for non-consequential actions. There is deliberately no `light`."
+        },
+        "always_confirm": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["consequential", "cross_origin_flow", "out_of_scope_navigation", "session_import", "file_upload", "download"] },
+          "default": ["consequential", "cross_origin_flow", "out_of_scope_navigation", "session_import", "file_upload", "download"]
+        },
+        "blocked_url_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["file://*", "browser://*", "chrome://*", "chrome-extension://*", "http://*", "*://localhost*", "*://127.0.0.1*", "*://[::1]*", "*://10.*", "*://192.168.*"]
+        },
+        "dev_mode": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "allow_localhost_origins": { "type": "array", "items": { "type": "string" } },
+            "browser_mcp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "bind": { "const": "127.0.0.1" },
+                "require_token": { "const": true }
+              }
+            }
+          }
+        },
+        "critic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "const": true },
+            "min_tier": { "type": "string", "enum": ["fast", "smart"], "default": "fast" },
+            "sees_page_content": { "const": false }
+          }
+        },
+        "injection_classifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "mode": { "const": "signal_only", "description": "Feeds the critic; never a hard block on its own." }
+          }
+        }
+      }
+    },
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vram_budget_mb": { "type": "integer", "minimum": 0, "default": 6500 },
+        "reserve_for_compositor_mb": { "type": "integer", "minimum": 0, "default": 1500 },
+        "idle_cpu_budget_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 5 },
+        "fast_model_idle_unload_s": { "type": "integer", "minimum": 0, "default": 600 },
+        "preload_fast_model_on_start": { "type": "boolean", "default": true }
+      }
+    }
+  }
+}

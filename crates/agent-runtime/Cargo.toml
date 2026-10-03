@@ -1,0 +1,21 @@
+[package]
+name = "agent-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Agent Runtime: observe → plan → policy → critic → confirm → act → journal"
+
+[dependencies]
+core-types = { path = "../core-types" }
+policy = { path = "../policy" }
+engine-adapter = { path = "../engine-adapter" }
+model-gateway = { path = "../model-gateway" }
+page-intelligence = { path = "../page-intelligence" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

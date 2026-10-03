@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browse.dev/schemas/task-scope.schema.json",
+  "title": "Browse Agent TaskScope",
+  "description": "Declared before the first action of an agent session and shown to the user. PolicyEngine enforces it deterministically (ADR-005 §4). Stored in agent_sessions.scope_json.",
+  "type": "object",
+  "required": ["origins", "tools", "profile", "limits"],
+  "additionalProperties": false,
+  "properties": {
+    "origins": {
+      "type": "array",
+      "description": "Origins the agent may navigate to and act on. Navigation elsewhere requires confirmation. Wildcards only for subdomains, e.g. `https://*.github.com`.",
+      "items": { "type": "string", "pattern": "^https://(\\*\\.)?[a-z0-9.\\-]+(:\\d+)?$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "tools": {
+      "type": "array",
+      "description": "Allow-list of tool names (from tool manifests).",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["isolated", "user_readonly"],
+      "description": "`isolated`: separate agent profile (default). `user_readonly`: the user's own profile but only read-only tools are allowed; PolicyEngine rejects the scope if any listed tool is not read_only."
+    },
+    "session_imports": {
+      "type": "array",
+      "description": "Origins whose session cookies the user agreed to copy into the isolated profile for this task only.",
+      "items": { "type": "string", "pattern": "^https://[a-z0-9.\\-]+(:\\d+)?$" },
+      "uniqueItems": true
+    },
+    "cross_origin_flows": {
+      "type": "array",
+      "description": "Pre-approved data flows `from -> to` (e.g. copy prices from shop A to a comparison sheet on B). Anything else triggers confirmation.",
+      "items": {
+        "type": "object",
+        "required": ["from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "fields": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "observe_cross_origin_iframes": {
+      "type": "array",
+      "description": "Iframe origins the sensor may include in observations (off by default).",
+      "items": { "type": "string" }
+    },
+    "limits": {
+      "type": "object",
+      "required": ["max_steps", "max_duration_ms", "money_limit_minor_units"],
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": { "type": "integer", "minimum": 1, "maximum": 200, "default": 40 },
+        "max_duration_ms": { "type": "integer", "minimum": 1000, "default": 600000 },
+        "money_limit_minor_units": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "0 means the agent may never reach a payment step; any positive value still requires per-payment confirmation."
+        },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "max_consequential_actions": { "type": "integer", "minimum": 0, "default": 3 }
+      }
+    },
+    "model_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow_cloud_planning": {
+          "type": "boolean",
+          "default": false,
+          "description": "Permit cloud providers for planning over `public` observations only (ADR-007)."
+        },
+        "min_critic_tier": {
+          "type": "string",
+          "enum": ["fast", "smart"],
+          "default": "fast",
+          "description": "The critic may never be downgraded below this tier."
+        }
+      }
+    }
+  }
+}

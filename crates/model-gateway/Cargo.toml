@@ -1,0 +1,27 @@
+[package]
+name = "model-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Model Gateway: provider abstraction, sensitivity-aware routing, streaming, cache, VRAM budget manager, llama-server sidecar"
+
+[features]
+default = ["http"]
+# reqwest-based transport and the llama-server sidecar (needs a network stack and tokio::process).
+http = ["dep:reqwest", "dep:which"]
+
+[dependencies]
+core-types = { path = "../core-types" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+blake3.workspace = true
+tracing.workspace = true
+reqwest = { workspace = true, optional = true }
+which = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
