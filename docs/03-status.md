@@ -16,15 +16,15 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | S2 Движок: `engine-cdp` (Chromium через CDP), фикстурные сайты, hostile-page E2E | готово | `b559628`…`ca9b5e0` | 7 E2E + 5 фикстур |
 | S3 Model Gateway: HTTP-транспорт, SSE-стриминг, кэш, облачный провайдер по ключу, lifecycle llama-server | готово | см. git log `feat(model-gateway)` | 34 unit + 3 live (llama.cpp) + 1 memory |
 | S4 Page Intelligence: извлечение, модель страницы, суммаризация / Q&A / перевод, верификация цитат | готово | `a1adfe8` | 10 unit + fixture/Chromium smoke |
-| S5 Memory: индексация с эмбеддингами, семантический поиск, управление памятью | в работе | — | 10 unit |
-| S6 Agent Runtime: сценарии (≥10), подтверждения, защита от инъекций | не начато | — | — |
-| S7 Оболочка: окна, вкладки, омнибокс, закладки, история, загрузки | не начато | — | — |
+| S5 Memory: индексация с эмбеддингами, семантический поиск, управление памятью | готово | `358b364` | 10 unit + CLI (stats, index, search, forget) |
+| S6 Agent Runtime: сценарии (≥10), подтверждения, защита от инъекций | готово | `02680b7` | 25 тестов (15 unit + 10 redteam E2E) + CLI `run` |
+| S7 Оболочка: окна, вкладки, омнибокс, закладки, история, загрузки | в работе | — | — |
 | S8 Вкладки по задачам, безопасность (фишинг, тёмные паттерны, трекеры) | не начато | — | — |
 | S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | не начато | — | — |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **107 тестов, 0 падений**
-(agent-runtime 15, core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 10,
-model-gateway 34 + 3 live, page-intelligence 10, policy 14, desktop 11); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **118 тестов, 0 падений**
+(agent-runtime 25 [15 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 10,
+model-gateway 34 + 3 live, page-intelligence 10, policy 14, desktop 14); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения; `npm test` в `sensor/` — smoke-тест бандла.
 
 ## S1 — Скелет
@@ -179,7 +179,11 @@ Chrome):
 S4 (Page Intelligence) завершён: CLI-срез `browse-desktop page <url> summarize|ask|translate` соединяет реальный CDP-движок,
 локально ограниченное наблюдение и `Gateway` со стримингом, кэшем и автоматической верификацией цитат (`[c0]`, обнаружение галлюцинаций).
 
-Текущий фокус — **S5 (Memory)**:
-1. Индексация страниц в SQLite с извлечением сущностей и генерацией эмбеддингов через `ModelGateway` (tier `Embed`).
-2. Персистентный кэш чанков и семантический поиск по памяти (FTS5 + веса + векторное сходство).
-3. CLI-команда `browse-desktop memory search <query>` и инспектор памяти для проверки работы поискового движка.
+S5 (Memory) завершён: индексация страниц в постоянную БД SQLite, пакетное сохранение чанков и векторов, гибридный поиск (BM25 FTS5 + векторный поиск с RRF), CLI-команды `browse-desktop memory stats/index/search/forget`.
+
+S6 (Agent Runtime) завершён: 10 канонических сценариев Red-Team (happy path, ввод с `$user`, блокировка навигации вне scope, запрет свободного текста модели, подтверждение действий consequential, dry-run остановка, блокировка кросс-доменных утечек, изоляция инъекций, защита парольных полей, целостность журнала аудита) и команда запуска `browse-desktop run <url> <task> [--dry-run] [--interactive]`.
+
+Текущий фокус — **S7 (Оболочка / Shell)**:
+1. Проектирование UI оболочки: окна, вкладки, группы вкладок, омнибокс на естественном языке.
+2. Сайдбар ИИ-ассистента с потоковым выводом и подтверждениями действий агента с превью.
+3. Инспектор памяти `browser://memory` и настройки `browser://ai`.

@@ -64,6 +64,15 @@ cargo run -p browse-desktop -- memory search "search query" [--domain example.co
 cargo run -p browse-desktop -- memory forget example.com
 ```
 
+### Agent Run CLI
+
+Execute autonomous browser tasks with deterministic policy validation, blind critic, interactive or auto-reject confirmation gates, and full SQLite auditing:
+
+```sh
+cargo run -p browse-desktop -- run https://example.com "find pricing plans" --dry-run
+cargo run -p browse-desktop -- run https://example.com "sign up for newsletter" --interactive
+```
+
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
 demo) or `http://hostile.localhost:8765` in any browser; `*.localhost` resolves
