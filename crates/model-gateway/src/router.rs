@@ -41,6 +41,7 @@ pub struct RouteDecision {
     pub reason: &'static str,
 }
 
+#[derive(Clone)]
 pub struct Router {
     providers: Vec<Arc<dyn ModelProvider>>,
     config: RouterConfig,

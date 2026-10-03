@@ -19,3 +19,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+memory = { path = "../memory" }
+engine-cdp = { path = "../engine-cdp" }
+fixtures = { path = "../fixtures" }
+

@@ -13,6 +13,7 @@
 //! browse-desktop page <url> summarize open a real page and summarize it with source citations
 //! ```
 
+mod agent_cmd;
 mod journal;
 mod memory_cmd;
 mod models;
@@ -44,9 +45,10 @@ async fn main() {
         Some("models") => models::models_command().await,
         Some("page") => page::page_command(&args[1..]).await,
         Some("memory") => memory_cmd::memory_command(&args[1..]).await,
+        Some("run") => agent_cmd::run_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>>>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]>"
             );
             Ok(())
         }
