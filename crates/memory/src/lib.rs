@@ -12,7 +12,7 @@ pub mod store;
 
 pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};
 pub use search::{SearchFilters, SearchHit};
-pub use store::{MemoryStore, NewChunk, NewPageVersion};
+pub use store::{auto_cluster_tab, MemoryStore, NewChunk, NewPageVersion, TabGroupRecord, TabRecord, TaskRecord};
 
 pub const SCHEMA_SQL: &str = include_str!("../../../schema/memory.sql");
 pub const SCHEMA_VERSION: i64 = 1;

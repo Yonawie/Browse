@@ -12,7 +12,8 @@ use axum::routing::{get, post};
 use axum::Json;
 use core_types::Sensitivity;
 use futures_util::stream::Stream;
-use memory::{MemoryStore, SearchFilters};
+use memory::{auto_cluster_tab, MemoryStore, SearchFilters};
+use page_intelligence::{detect_dark_patterns, inspect_url_phishing};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -29,6 +30,8 @@ pub struct TabInfo {
     pub title: String,
     pub profile: String,
     pub active: bool,
+    #[serde(default)]
+    pub group: Option<String>,
 }
 
 #[derive(Clone)]
@@ -101,6 +104,10 @@ pub async fn dispatch_rpc(
         "tabs.create" | "tabs.new" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("https://example.com");
             let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("User");
+            let group = req.params.get("group")
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+                .or_else(|| Some(auto_cluster_tab(url).to_string()));
             let mut tabs = state.tabs.lock().unwrap();
             for t in tabs.iter_mut() {
                 t.active = false;
@@ -111,6 +118,7 @@ pub async fn dispatch_rpc(
                 title: "New Tab".to_string(),
                 profile: profile.to_string(),
                 active: true,
+                group,
             };
             tabs.push(new_tab.clone());
             Ok(json!(new_tab))
@@ -123,6 +131,7 @@ pub async fn dispatch_rpc(
                 if let Some(tab) = tabs.iter_mut().find(|t| t.id == id) {
                     tab.url = url.to_string();
                     tab.title = url.to_string();
+                    tab.group = Some(auto_cluster_tab(url).to_string());
                 }
             }
             Ok(json!({ "status": "ok" }))
@@ -137,6 +146,40 @@ pub async fn dispatch_rpc(
                 }
             }
             Ok(json!({ "status": "ok" }))
+        }
+        "page.analyze_safety" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let text = req.params.get("text").and_then(Value::as_str).unwrap_or("");
+            let phishing = inspect_url_phishing(url);
+            let dark_patterns = detect_dark_patterns(text);
+            Ok(json!({
+                "phishing": phishing,
+                "dark_patterns": dark_patterns,
+            }))
+        }
+        "tabs.groups.list" => {
+            let lock = state.store.lock().unwrap();
+            let groups = lock.list_tab_groups().unwrap_or_default();
+            Ok(json!(groups))
+        }
+        "tabs.groups.create" => {
+            let title = req.params.get("title").and_then(Value::as_str).unwrap_or("New Group");
+            let task_id = req.params.get("task_id").and_then(Value::as_str);
+            let auto = req.params.get("auto").and_then(Value::as_bool).unwrap_or(false);
+            let lock = state.store.lock().unwrap();
+            let group_id = lock.create_tab_group(task_id, title, auto).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": group_id, "title": title }))
+        }
+        "tasks.list" => {
+            let lock = state.store.lock().unwrap();
+            let tasks = lock.list_tasks().unwrap_or_default();
+            Ok(json!(tasks))
+        }
+        "tasks.create" => {
+            let title = req.params.get("title").and_then(Value::as_str).unwrap_or("New Task");
+            let lock = state.store.lock().unwrap();
+            let task_id = lock.create_task(title).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": task_id, "title": title }))
         }
         "memory.stats" => {
             let lock = state.store.lock().unwrap();
@@ -242,6 +285,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             title: "Example Domain".to_string(),
             profile: "User".to_string(),
             active: true,
+            group: Some("General".to_string()),
         },
         TabInfo {
             id: "tab-2".to_string(),
@@ -249,6 +293,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             title: "Demo Shop".to_string(),
             profile: "Agent".to_string(),
             active: false,
+            group: Some("Shopping".to_string()),
         },
     ];
 
@@ -316,6 +361,7 @@ mod tests {
                 title: "Example".to_string(),
                 profile: "Personal".to_string(),
                 active: true,
+                group: Some("General".to_string()),
             }])),
             store,
         };
@@ -340,6 +386,7 @@ mod tests {
         let res_new = dispatch_rpc(state.clone(), req_new).await.unwrap();
         assert_eq!(res_new["url"], "https://rust-lang.org");
         assert_eq!(res_new["profile"], "Agent");
+        assert_eq!(res_new["group"], "General");
 
         // Verify count is now 2
         let tabs = state.tabs.lock().unwrap();
@@ -372,6 +419,48 @@ mod tests {
         };
         let res_mem = dispatch_rpc(state, req_mem).await.unwrap();
         assert_eq!(res_mem["pages"], 0);
+    }
+
+    #[tokio::test]
+    async fn rpc_safety_analysis_and_tab_groups() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState {
+            tabs: Arc::new(Mutex::new(vec![])),
+            store,
+        };
+
+        // page.analyze_safety
+        let req_safety = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(20)),
+            method: "page.analyze_safety".to_string(),
+            params: json!({
+                "url": "https://paypal-security-update.com/login",
+                "text": "Only 2 items left in stock! Renews automatically at $99/mo."
+            }),
+        };
+        let res_safety = dispatch_rpc(state.clone(), req_safety).await.unwrap();
+        assert_eq!(res_safety["phishing"]["severity"], "Dangerous");
+        assert_eq!(res_safety["dark_patterns"].as_array().unwrap().len(), 2);
+
+        // tabs.groups.create & list
+        let req_grp = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(21)),
+            method: "tabs.groups.create".to_string(),
+            params: json!({ "title": "Research" }),
+        };
+        let res_grp = dispatch_rpc(state.clone(), req_grp).await.unwrap();
+        assert_eq!(res_grp["title"], "Research");
+
+        let req_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(22)),
+            method: "tabs.groups.list".to_string(),
+            params: json!({}),
+        };
+        let res_list = dispatch_rpc(state, req_list).await.unwrap();
+        assert_eq!(res_list.as_array().unwrap().len(), 1);
     }
 }
 

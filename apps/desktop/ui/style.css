@@ -688,3 +688,126 @@ body {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Tab Group Tags */
+.tab-group-tag {
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* Safety Omnibox Tags */
+.safety-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.safety-tag.safe {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.safety-tag.suspicious {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.safety-tag.dangerous {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Safety & Privacy Tab */
+.safety-summary-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.safety-badge-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #10b981;
+}
+
+.safety-domain-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.safety-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.safety-section h4 {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.safety-details {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.safe-tag {
+  color: #10b981;
+  font-weight: 500;
+}
+
+.warning-alert {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 6px;
+  border-radius: 4px;
+}
+
+.threat-alert {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.dark-pattern-item {
+  border-left: 2px solid #f59e0b;
+  padding-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dark-pattern-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.telemetry-info {
+  line-height: 1.4;
+  color: var(--text-main);
+}
+

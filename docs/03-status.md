@@ -18,14 +18,14 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | S4 Page Intelligence: извлечение, модель страницы, суммаризация / Q&A / перевод, верификация цитат | готово | `a1adfe8` | 10 unit + fixture/Chromium smoke |
 | S5 Memory: индексация с эмбеддингами, семантический поиск, управление памятью | готово | `358b364` | 10 unit + CLI (stats, index, search, forget) |
 | S6 Agent Runtime: сценарии (≥10), подтверждения, защита от инъекций | готово | `02680b7` | 25 тестов (15 unit + 10 redteam E2E) + CLI `run` |
-| S7 Оболочка: окна, вкладки, омнибокс, закладки, история, загрузки | в работе | — | — |
-| S8 Вкладки по задачам, безопасность (фишинг, тёмные паттерны, трекеры) | не начато | — | — |
-| S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | не начато | — | — |
+| S7 Оболочка: окна, вкладки, омнибокс, WebUI Shell, JSON-RPC & SSE IPC | готово | `6c283c2` | 18 unit (desktop) + embedded asset tests |
+| S8 Вкладки по задачам, безопасность (фишинг, тёмные паттерны, zero-telemetry) | готово | см. git log | 20 unit (page-intelligence) + 11 (memory) + 20 (desktop) |
+| S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | в работе | — | — |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **118 тестов, 0 падений**
-(agent-runtime 25 [15 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 10,
-model-gateway 34 + 3 live, page-intelligence 10, policy 14, desktop 14); `cargo clippy --workspace --all-targets
---all-features -- -D warnings` без единого предупреждения; `npm test` в `sensor/` — smoke-тест бандла.
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **140 тестов, 0 падений**
+(agent-runtime 25 [15 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 11,
+model-gateway 34 + 3 live, page-intelligence 20, policy 14, desktop 20); `cargo clippy --workspace --all-targets
+--all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет
 

@@ -177,8 +177,10 @@ class BrowseShell {
       el.className = `tab-item ${tab.active ? 'active' : ''} ${tab.profile === 'Agent' ? 'agent-profile' : ''}`;
       
       const badge = tab.profile === 'Agent' ? '<span class="tab-badge">Agent</span>' : '';
+      const groupBadge = tab.group ? `<span class="tab-group-tag">${this.escapeHtml(tab.group)}</span>` : '';
       el.innerHTML = `
         ${badge}
+        ${groupBadge}
         <span class="tab-title">${this.escapeHtml(tab.title || tab.url)}</span>
         <button class="tab-close" title="Close Tab">×</button>
       `;
@@ -204,6 +206,7 @@ class BrowseShell {
         if (this.webFrame.src !== tab.url) {
           this.webFrame.src = tab.url;
         }
+        this.analyzeSafety(tab.url);
       }
     });
   }
@@ -214,7 +217,8 @@ class BrowseShell {
       url,
       title: 'New Tab',
       profile,
-      active: true
+      active: true,
+      group: 'General'
     };
     this.tabs.forEach(t => t.active = false);
     this.tabs.push(newTab);
@@ -245,6 +249,7 @@ class BrowseShell {
       activeTab.title = url;
       this.renderTabs();
       this.webFrame.src = url;
+      this.analyzeSafety(url);
       this.rpc('tabs.navigate', { tab_id: activeTab.id, url });
     }
   }
@@ -256,6 +261,74 @@ class BrowseShell {
     } else if (schemeUrl === 'browser://ai') {
       const aiTab = document.querySelector('[data-tab="settings"]');
       if (aiTab) aiTab.click();
+    } else if (schemeUrl === 'browser://safety') {
+      const safetyTab = document.querySelector('[data-tab="safety"]');
+      if (safetyTab) safetyTab.click();
+    }
+  }
+
+  async analyzeSafety(url) {
+    const safetyTag = document.getElementById('safety-tag');
+    const safetyBadge = document.getElementById('safety-badge');
+    const safetyDomain = document.getElementById('safety-domain-name');
+    const phishingDetails = document.getElementById('phishing-details');
+    const darkPatternsDetails = document.getElementById('dark-patterns-details');
+
+    if (!url || url === 'about:blank' || !safetyTag) return;
+
+    try {
+      const res = await this.rpc('page.analyze_safety', { url, text: '' });
+      if (!res) return;
+
+      const { phishing, dark_patterns } = res;
+      if (safetyDomain) safetyDomain.textContent = `Domain: ${phishing.domain}`;
+
+      if (phishing.severity === 'Dangerous') {
+        safetyTag.className = 'safety-tag dangerous';
+        safetyTag.textContent = 'Phishing Risk ⚠';
+        if (safetyBadge) {
+          safetyBadge.textContent = '🚨 High Risk: Phishing / Spoofing Detected';
+          safetyBadge.style.color = '#ef4444';
+        }
+        if (phishingDetails) {
+          phishingDetails.innerHTML = phishing.reasons.map(r => `<div class="threat-alert">⚠ ${this.escapeHtml(r)}</div>`).join('');
+        }
+      } else if (phishing.severity === 'Suspicious') {
+        safetyTag.className = 'safety-tag suspicious';
+        safetyTag.textContent = 'Suspicious ⚠';
+        if (safetyBadge) {
+          safetyBadge.textContent = '⚠ Warning: Suspicious Domain Pattern';
+          safetyBadge.style.color = '#f59e0b';
+        }
+        if (phishingDetails) {
+          phishingDetails.innerHTML = phishing.reasons.map(r => `<div class="warning-alert">⚠ ${this.escapeHtml(r)}</div>`).join('');
+        }
+      } else {
+        safetyTag.className = 'safety-tag safe';
+        safetyTag.textContent = 'Safe 🛡️';
+        if (safetyBadge) {
+          safetyBadge.textContent = '🛡️ Domain Security Verified';
+          safetyBadge.style.color = '#10b981';
+        }
+        if (phishingDetails) {
+          phishingDetails.innerHTML = '<span class="safe-tag">✔ No homograph attacks or brand spoofing detected</span>';
+        }
+      }
+
+      if (darkPatternsDetails) {
+        if (dark_patterns && dark_patterns.length > 0) {
+          darkPatternsDetails.innerHTML = dark_patterns.map(dp => `
+            <div class="dark-pattern-item">
+              <strong>${this.escapeHtml(dp.title)}:</strong> "${this.escapeHtml(dp.snippet)}"
+              <small>${this.escapeHtml(dp.explanation)}</small>
+            </div>
+          `).join('');
+        } else {
+          darkPatternsDetails.innerHTML = '<p class="empty-hint">✔ No deceptive urgency, countdowns, or concealed charges found.</p>';
+        }
+      }
+    } catch (e) {
+      console.warn('Safety analysis error:', e);
     }
   }
 

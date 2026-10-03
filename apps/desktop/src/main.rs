@@ -18,6 +18,7 @@ mod journal;
 mod memory_cmd;
 mod models;
 mod page;
+mod safety_cmd;
 mod server;
 
 use std::collections::VecDeque;
@@ -48,9 +49,10 @@ async fn main() {
         Some("memory") => memory_cmd::memory_command(&args[1..]).await,
         Some("run") => agent_cmd::run_command(&args[1..]).await,
         Some("shell") => server::shell_command(&args[1..]).await,
+        Some("inspect-safety") => safety_cmd::safety_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless]>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>]>"
             );
             Ok(())
         }

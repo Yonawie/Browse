@@ -1,7 +1,38 @@
 use crate::{new_id, now_ms, MemoryError, Result, SCHEMA_SQL, SCHEMA_VERSION};
 use core_types::{Origin, PageKind, Provenance, Sensitivity};
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskRecord {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabGroupRecord {
+    pub id: String,
+    pub task_id: Option<String>,
+    pub title: String,
+    pub auto: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabRecord {
+    pub id: String,
+    pub profile_id: String,
+    pub group_id: Option<String>,
+    pub window_id: String,
+    pub position: i64,
+    pub pinned: bool,
+    pub last_active_at: i64,
+    pub opened_at: i64,
+}
 
 pub struct MemoryStore {
     conn: Connection,
@@ -234,11 +265,143 @@ impl MemoryStore {
             "grants",
             "policy_decisions",
             "model_calls",
+            "tasks",
+            "tab_groups",
+            "tabs",
         ];
         if !allowed.contains(&table) {
             return Err(rusqlite::Error::InvalidQuery.into());
         }
         Ok(self.conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))?)
+    }
+
+    pub fn list_tasks(&self) -> Result<Vec<TaskRecord>> {
+        let mut stmt = self.conn.prepare("SELECT id, title, status, created_at, updated_at FROM tasks ORDER BY updated_at DESC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TaskRecord {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                status: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn update_task_status(&self, task_id: &str, status: &str) -> Result<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "UPDATE tasks SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            params![status, now, task_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_tab_group(&self, task_id: Option<&str>, title: &str, auto: bool) -> Result<String> {
+        let id = new_id();
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO tab_groups (id, task_id, title, auto, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, task_id, title, auto as i32, now],
+        )?;
+        Ok(id)
+    }
+
+    pub fn list_tab_groups(&self) -> Result<Vec<TabGroupRecord>> {
+        let mut stmt = self.conn.prepare("SELECT id, task_id, title, auto, created_at FROM tab_groups ORDER BY created_at ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TabGroupRecord {
+                id: row.get(0)?,
+                task_id: row.get(1)?,
+                title: row.get(2)?,
+                auto: row.get::<_, i32>(3)? != 0,
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn delete_tab_group(&self, group_id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM tab_groups WHERE id = ?1", params![group_id])?;
+        Ok(())
+    }
+
+    pub fn save_tab_state(
+        &self,
+        tab_id: &str,
+        profile_id: &str,
+        group_id: Option<&str>,
+        window_id: &str,
+        position: i64,
+        pinned: bool,
+    ) -> Result<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO tabs (id, profile_id, group_id, window_id, position, pinned, last_active_at, opened_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+               group_id = excluded.group_id,
+               position = excluded.position,
+               pinned = excluded.pinned,
+               last_active_at = excluded.last_active_at",
+            params![tab_id, profile_id, group_id, window_id, position, pinned as i32, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_tabs(&self) -> Result<Vec<TabRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, profile_id, group_id, window_id, position, pinned, last_active_at, opened_at FROM tabs ORDER BY position ASC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TabRecord {
+                id: row.get(0)?,
+                profile_id: row.get(1)?,
+                group_id: row.get(2)?,
+                window_id: row.get(3)?,
+                position: row.get(4)?,
+                pinned: row.get::<_, i32>(5)? != 0,
+                last_active_at: row.get(6)?,
+                opened_at: row.get(7)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn remove_tab_state(&self, tab_id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM tabs WHERE id = ?1", params![tab_id])?;
+        Ok(())
+    }
+}
+
+/// Heuristic auto-clusterer that assigns a tab category based on URL structure.
+pub fn auto_cluster_tab(url: &str) -> &'static str {
+    let lower = url.to_lowercase();
+    if lower.contains("doc.") || lower.contains("/docs") || lower.contains("/api") || lower.contains("manual") {
+        "Documentation"
+    } else if lower.contains("shop") || lower.contains("cart") || lower.contains("store") || lower.contains("buy") {
+        "Shopping"
+    } else if lower.contains("github") || lower.contains("gitlab") || lower.contains("stackoverflow") || lower.contains("code") {
+        "Development"
+    } else if lower.contains("search") || lower.contains("google.") || lower.contains("bing.") {
+        "Search"
+    } else if lower.contains("news") || lower.contains("blog") || lower.contains("article") {
+        "Reading"
+    } else {
+        "General"
     }
 }
 
@@ -395,5 +558,45 @@ mod tests {
         // 2026-09-12T22:00:00Z
         assert_eq!(month_bucket(1_789_164_000_000), 202609);
         assert_eq!(month_bucket(0), 197001);
+    }
+
+    #[test]
+    fn task_and_tab_group_lifecycle() {
+        let s = store();
+
+        // Create and list tasks
+        let task_id = s.create_task("Research AI architectures").unwrap();
+        let tasks = s.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].title, "Research AI architectures");
+        assert_eq!(tasks[0].status, "active");
+
+        s.update_task_status(&task_id, "done").unwrap();
+        let tasks_updated = s.list_tasks().unwrap();
+        assert_eq!(tasks_updated[0].status, "done");
+
+        // Create tab groups
+        let group_id = s.create_tab_group(Some(&task_id), "AI Papers", false).unwrap();
+        let groups = s.list_tab_groups().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].title, "AI Papers");
+        assert_eq!(groups[0].task_id, Some(task_id));
+
+        // Save tab states
+        s.save_tab_state("tab-1", "p", Some(&group_id), "win-1", 0, false).unwrap();
+        s.save_tab_state("tab-2", "p", Some(&group_id), "win-1", 1, true).unwrap();
+        let tabs = s.list_tabs().unwrap();
+        assert_eq!(tabs.len(), 2);
+        assert!(tabs[1].pinned);
+
+        // Delete tab group
+        s.delete_tab_group(&group_id).unwrap();
+        assert_eq!(s.list_tab_groups().unwrap().len(), 0);
+
+        // Auto-clusterer
+        assert_eq!(auto_cluster_tab("https://docs.rs/tokio"), "Documentation");
+        assert_eq!(auto_cluster_tab("https://store.steampowered.com/app/1"), "Shopping");
+        assert_eq!(auto_cluster_tab("https://github.com/rust-lang/rust"), "Development");
+        assert_eq!(auto_cluster_tab("https://google.com/search?q=test"), "Search");
     }
 }

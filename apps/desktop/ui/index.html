@@ -30,6 +30,7 @@
       <div class="omnibox-container">
         <span class="security-indicator" id="security-indicator" title="Page Security">🔒</span>
         <input type="text" id="omnibox-input" placeholder="Search web, enter URL, or ask a question..." autocomplete="off">
+        <span class="safety-tag safe" id="safety-tag" title="Safety Status">Safe 🛡️</span>
         <span class="sensitivity-tag" id="sensitivity-tag" title="Data Sensitivity">Public</span>
       </div>
 
@@ -60,6 +61,7 @@
         <nav class="sidebar-nav">
           <button class="sidebar-tab active" data-tab="intelligence">Page Intelligence</button>
           <button class="sidebar-tab" data-tab="agent">Agent Tasks</button>
+          <button class="sidebar-tab" data-tab="safety">Safety & Privacy</button>
           <button class="sidebar-tab" data-tab="memory">Memory & Search</button>
           <button class="sidebar-tab" data-tab="settings">AI Settings</button>
         </nav>
@@ -123,6 +125,33 @@
             <h4>Execution Audit Trail</h4>
             <div class="timeline-feed" id="timeline-feed">
               <div class="timeline-empty">No active agent task.</div>
+            </div>
+          </div>
+        <!-- Tab: Safety & Privacy -->
+        <div class="sidebar-content" id="tab-safety">
+          <div class="safety-summary-card" id="safety-summary-card">
+            <div class="safety-badge-title" id="safety-badge">🛡️ Domain Security Verified</div>
+            <p id="safety-domain-name" class="safety-domain-text">Inspecting domain...</p>
+          </div>
+
+          <div class="safety-section">
+            <h4>Phishing & Spoofing Analysis</h4>
+            <div id="phishing-details" class="safety-details">
+              <span class="safe-tag">✔ No homograph attacks or brand spoofing detected</span>
+            </div>
+          </div>
+
+          <div class="safety-section">
+            <h4>Deceptive Patterns (Dark Patterns)</h4>
+            <div id="dark-patterns-details" class="safety-details">
+              <p class="empty-hint">No deceptive urgency or concealed charges detected.</p>
+            </div>
+          </div>
+
+          <div class="safety-section">
+            <h4>Telemetry & Network Isolation</h4>
+            <div class="safety-details">
+              <p class="telemetry-info">🔒 <strong>Zero Telemetry Enforced:</strong> Browse never transmits keystrokes, personal browsing sessions, or embeddings to external cloud servers.</p>
             </div>
           </div>
         </div>

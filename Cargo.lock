@@ -857,6 +857,7 @@ dependencies = [
  "core-types",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]
