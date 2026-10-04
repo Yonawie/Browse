@@ -81,6 +81,11 @@ class BrowseShell {
     this.memoryResults = document.getElementById('memory-results');
     this.kgTags = document.getElementById('knowledge-graph-tags');
     this.btnRefreshKg = document.getElementById('btn-refresh-kg');
+    this.btnExportMemory = document.getElementById('btn-export-memory');
+
+    // Privacy (D-5)
+    this.privacyGrade = document.getElementById('privacy-grade-badge');
+    this.privacyDetails = document.getElementById('privacy-details');
 
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
@@ -342,6 +347,9 @@ class BrowseShell {
     });
     if (this.btnRefreshKg) {
       this.btnRefreshKg.addEventListener('click', () => this.loadKnowledgeGraph());
+    }
+    if (this.btnExportMemory) {
+      this.btnExportMemory.addEventListener('click', () => this.exportMemory());
     }
 
     // Playwright export (D-2)
@@ -670,6 +678,47 @@ class BrowseShell {
           darkPatternsDetails.innerHTML = '<p class="empty-hint">✔ No deceptive urgency, countdowns, or concealed charges found.</p>';
         }
       }
+
+      if (res.privacy && this.privacyGrade && this.privacyDetails) {
+        const { score, grade, trackers, fingerprinting } = res.privacy;
+        this.privacyGrade.textContent = `Grade ${grade} (${score}/100)`;
+        if (grade === 'A') {
+          this.privacyGrade.className = 'safe-tag';
+          this.privacyGrade.style.color = '#10b981';
+        } else if (grade === 'B') {
+          this.privacyGrade.className = 'safe-tag';
+          this.privacyGrade.style.color = '#3b82f6';
+        } else if (grade === 'C') {
+          this.privacyGrade.className = 'warning-alert';
+          this.privacyGrade.style.color = '#f59e0b';
+        } else {
+          this.privacyGrade.className = 'threat-alert';
+          this.privacyGrade.style.color = '#ef4444';
+        }
+
+        let pDetailsHtml = '';
+        if (trackers.length === 0 && fingerprinting.length === 0) {
+          pDetailsHtml = '<span class="safe-tag">✔ No third-party tracking or fingerprinting scripts detected</span>';
+        } else {
+          if (trackers.length > 0) {
+            pDetailsHtml += '<div style="margin-bottom:4px;font-weight:600;font-size:11px;">Trackers detected:</div>';
+            pDetailsHtml += trackers.map(t => `
+              <div class="warning-alert" style="margin-bottom:4px;font-size:11px;">
+                ⚠ <strong>${this.escapeHtml(t.category)}:</strong> ${this.escapeHtml(t.pattern)} (risk: -${t.risk_weight}pts)
+              </div>
+            `).join('');
+          }
+          if (fingerprinting.length > 0) {
+            pDetailsHtml += '<div style="margin-top:6px;margin-bottom:4px;font-weight:600;font-size:11px;">Fingerprinting heuristics:</div>';
+            pDetailsHtml += fingerprinting.map(f => `
+              <div class="threat-alert" style="margin-bottom:4px;font-size:11px;">
+                🚨 <strong>${this.escapeHtml(f.heuristic)}:</strong> ${this.escapeHtml(f.explanation)}
+              </div>
+            `).join('');
+          }
+        }
+        this.privacyDetails.innerHTML = pDetailsHtml;
+      }
     } catch (e) {
       console.warn('Safety analysis error:', e);
     }
@@ -904,6 +953,32 @@ class BrowseShell {
       `;
       this.memoryResults.appendChild(card);
     });
+  }
+
+  async exportMemory() {
+    try {
+      this.showToast('Exporting Obsidian vault...');
+      const res = await this.rpc('memory.export', { format: 'obsidian' });
+      if (res && res.files) {
+        const noteCount = res.total_notes || Object.keys(res.files).length;
+        const kb = ((res.total_bytes || 0) / 1024).toFixed(1);
+        this.showToast(`Exported ${noteCount} notes to Obsidian vault format (${kb} KB)`);
+
+        // Trigger browser download of index file or prompt
+        const content = res.files['_index.md'] || '# Browse Memory Vault\n';
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'browse_memory_vault_index.md';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } else {
+        this.showToast('Memory export completed.');
+      }
+    } catch (e) {
+      console.error('Export memory error:', e);
+      this.showToast('Failed to export memory vault');
+    }
   }
 
   async showPlaywrightModal() {

@@ -11,6 +11,7 @@ pub mod entities;
 pub mod injection;
 pub mod page_kind;
 pub mod phishing;
+pub mod privacy;
 
 pub use budget::{trim_observation, ObservationBudget};
 pub use chunker::{chunk_text, Chunk, ChunkerConfig};
@@ -22,6 +23,7 @@ pub use entities::{extract_entities_and_relations, KnowledgeGraphExtraction};
 pub use injection::injection_signal;
 pub use page_kind::detect_page_kind;
 pub use phishing::{inspect_url_phishing, PhishingReport, PhishingSeverity};
+pub use privacy::{inspect_page_privacy, FingerprintSignal, PrivacyAuditReport, TrackerCategory, TrackerFinding};
 
 /// Rough token estimate. Local tokenizers vary; 4 chars/token is a safe upper
 /// bound for Latin scripts, ~2.5 for Cyrillic/CJK. We use a blended estimate.

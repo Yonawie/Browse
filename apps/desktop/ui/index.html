@@ -174,6 +174,16 @@
           </div>
 
           <div class="safety-section">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0;">Privacy & Tracker Audit (D-5)</h4>
+              <span id="privacy-grade-badge" class="safe-tag" style="font-weight:700;">Grade A</span>
+            </div>
+            <div id="privacy-details" class="safety-details" style="margin-top:6px;">
+              <span class="safe-tag">✔ No third-party tracking or fingerprinting scripts detected</span>
+            </div>
+          </div>
+
+          <div class="safety-section">
             <h4>Telemetry & Network Isolation</h4>
             <div class="safety-details">
               <p class="telemetry-info">🔒 <strong>Zero Telemetry Enforced:</strong> Browse never transmits keystrokes, personal browsing sessions, or embeddings to external cloud servers.</p>
@@ -188,8 +198,11 @@
             <button class="btn-primary" id="btn-memory-search">Search</button>
           </div>
 
-          <div class="memory-stats-badge" id="memory-stats-badge">
-            Loading memory stats...
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+            <div class="memory-stats-badge" id="memory-stats-badge" style="margin:0;">
+              Loading memory stats...
+            </div>
+            <button class="btn-secondary" id="btn-export-memory" style="font-size:11px; padding:3px 8px; cursor:pointer;" title="Export memory as Obsidian vault (M-4)">📦 Export Vault</button>
           </div>
 
           <!-- Knowledge Graph Insights -->

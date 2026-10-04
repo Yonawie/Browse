@@ -30,10 +30,12 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Focus Mode & Selection (AT-4 / AT-3 / IN-4): режим фокусировки, приоритизация вкладок, выделение | готово | `1068472` | 24 unit (desktop) + CDP selection + RPC `focus.toggle`, `tabs.prioritize`, `page.selection.*` |
 | Page Diff Across Time (PI-11 / AT-5): дифф страниц во времени, история версий, CLI diff | готово | `bbb320f` | 24 unit (page-intelligence) + 14 (memory) + RPC `page.diff` + CLI `page <url> diff` |
 | Playwright Test Generator (D-2): экспорт тестов из действий браузера с ARIA-селекторами | готово | `5f0f30f` | 32 unit (agent-runtime) + 26 (desktop) + RPC `session.export_playwright` + CLI `playwright` |
+| Privacy & Tracker Audit (D-5): аудит трекеров, рекламных сетей, сессионных реплеев и фингерпринтинга | готово | см. git log | 27 unit (page-intelligence) + RPC `page.analyze_safety` + UI Privacy Audit |
+| Memory Obsidian Vault Export (M-4): экспорт базы знаний памяти в Obsidian vault с [[wikilinks]] и JSON | готово | см. git log | 16 unit (memory) + RPC `memory.export` + UI Vault Export |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **174 теста, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 14,
-model-gateway 34 + 3 live, page-intelligence 24, policy 14, desktop 26); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **179 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 16,
+model-gateway 34 + 3 live, page-intelligence 27, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет

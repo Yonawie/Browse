@@ -14,7 +14,7 @@ use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
 use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters};
-use page_intelligence::{compute_page_diff, detect_dark_patterns, inspect_url_phishing};
+use page_intelligence::{compute_page_diff, detect_dark_patterns, inspect_page_privacy, inspect_url_phishing};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -491,11 +491,18 @@ pub async fn dispatch_rpc(
         "page.analyze_safety" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
             let text = req.params.get("text").and_then(Value::as_str).unwrap_or("");
+            let script_sources: Vec<&str> = req.params.get("scripts")
+                .and_then(Value::as_array)
+                .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+
             let phishing = inspect_url_phishing(url);
             let dark_patterns = detect_dark_patterns(text);
+            let privacy = inspect_page_privacy(url, text, &script_sources);
             Ok(json!({
                 "phishing": phishing,
                 "dark_patterns": dark_patterns,
+                "privacy": privacy,
             }))
         }
         "page.diff" => {
@@ -605,6 +612,17 @@ pub async fn dispatch_rpc(
                 })
                 .collect();
             Ok(json!(entities_json))
+        }
+        "memory.export" => {
+            let format_str = req.params.get("format").and_then(Value::as_str).unwrap_or("obsidian");
+            let format = match format_str {
+                "markdown" => memory::ExportFormat::Markdown,
+                "json" => memory::ExportFormat::Json,
+                _ => memory::ExportFormat::Obsidian,
+            };
+            let lock = state.store.lock().unwrap();
+            let report = lock.export_memory(format).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(report))
         }
         "skills.list" => {
             let skills = core_types::builtin_skills();
@@ -1295,9 +1313,36 @@ mod tests {
                 "action": "summarize"
             }),
         };
-        let res_exec = dispatch_rpc(state, req_exec).await.unwrap();
+        let res_exec = dispatch_rpc(state.clone(), req_exec).await.unwrap();
         assert!(res_exec["answer"].as_str().unwrap().contains("[c0]"));
         assert_eq!(res_exec["citations"]["verified"][0]["obs_id"], "c0");
+
+        // 3. Privacy audit in page.analyze_safety (D-5)
+        let req_safety = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(70)),
+            method: "page.analyze_safety".to_string(),
+            params: json!({
+                "url": "https://ad-site.example.com",
+                "text": "Some text",
+                "scripts": ["https://www.google-analytics.com/analytics.js"]
+            }),
+        };
+        let res_safety = dispatch_rpc(state.clone(), req_safety).await.unwrap();
+        assert!(!res_safety["privacy"]["trackers"].as_array().unwrap().is_empty());
+        assert_eq!(res_safety["privacy"]["trackers"][0]["name"], "Google Analytics / Tag Manager");
+
+        // 4. Memory export in Obsidian format (M-4)
+        let req_export = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(71)),
+            method: "memory.export".to_string(),
+            params: json!({ "format": "obsidian" }),
+        };
+        let res_export = dispatch_rpc(state, req_export).await.unwrap();
+        assert_eq!(res_export["format"], "obsidian");
+        let docs = res_export["documents"].as_array().unwrap();
+        assert!(docs.iter().any(|d| d["filename"] == "_index.md"));
     }
 }
 
