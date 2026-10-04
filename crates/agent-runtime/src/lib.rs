@@ -21,11 +21,13 @@
 pub mod io;
 pub mod mcp;
 pub mod planner;
+pub mod plugin;
 pub mod tools;
 
 pub use io::*;
 pub use mcp::*;
 pub use planner::*;
+pub use plugin::*;
 pub use tools::*;
 
 use std::collections::BTreeMap;
@@ -146,6 +148,7 @@ pub struct AgentRunner {
     confirmer: Arc<dyn ConfirmationHandler>,
     journal: Arc<dyn Journal>,
     memory_lookup: MemoryLookup,
+    plugin_host: Option<PluginHost>,
     now: Clock,
     /// Planner is denied more than this many times in a row → the session stops.
     pub max_consecutive_denies: u32,
@@ -170,6 +173,7 @@ impl AgentRunner {
             confirmer,
             journal,
             memory_lookup: Arc::new(|_| None),
+            plugin_host: None,
             now: Arc::new(|| {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -178,6 +182,11 @@ impl AgentRunner {
             }),
             max_consecutive_denies: 3,
         }
+    }
+
+    pub fn with_plugin_host(mut self, host: PluginHost) -> Self {
+        self.plugin_host = Some(host);
+        self
     }
 
     pub fn with_memory_lookup(mut self, f: MemoryLookup) -> Self {
@@ -580,7 +589,14 @@ impl AgentRunner {
                         },
                         error: Some("search_memory is wired by the application (needs MemoryStore)".into()),
                     }),
-                    other => Err(AgentError::UnknownTool(other.to_string())),
+                    other => {
+                        if let Some(host) = &self.plugin_host {
+                            if host.get(other).is_some() {
+                                return host.execute_call(call).await;
+                            }
+                        }
+                        Err(AgentError::UnknownTool(other.to_string()))
+                    }
                 }
             }
         }
