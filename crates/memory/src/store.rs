@@ -257,6 +257,7 @@ impl MemoryStore {
             "memories",
             "visits",
             "entities",
+            "entity_mentions",
             "edges",
             "agent_sessions",
             "agent_steps",
@@ -384,6 +385,86 @@ impl MemoryStore {
     pub fn remove_tab_state(&self, tab_id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM tabs WHERE id = ?1", params![tab_id])?;
         Ok(())
+    }
+
+    // -- knowledge graph ---------------------------------------------------
+
+    /// Insert or retrieve entities, record mentions for a chunk, and record relations/edges.
+    pub fn record_knowledge_graph(
+        &self,
+        chunk_id: &str,
+        entities: &[core_types::ExtractedEntity],
+        relations: &[core_types::ExtractedRelation],
+    ) -> Result<()> {
+        let now = now_ms();
+        let tx = self.conn.unchecked_transaction()?;
+
+        let mut entity_id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        for ent in entities {
+            // Upsert entity
+            let existing_id: Option<String> = tx
+                .query_row(
+                    "SELECT id FROM entities WHERE kind = ?1 AND normalized = ?2",
+                    params![ent.kind, ent.normalized],
+                    |r| r.get(0),
+                )
+                .optional()?;
+
+            let eid = if let Some(id) = existing_id {
+                id
+            } else {
+                let id = new_id();
+                tx.execute(
+                    "INSERT INTO entities(id, kind, name, normalized, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, ent.kind, ent.name, ent.normalized, now],
+                )?;
+                id
+            };
+
+            // Record mention
+            tx.execute(
+                "INSERT OR REPLACE INTO entity_mentions(entity_id, chunk_id, confidence) VALUES (?1, ?2, ?3)",
+                params![eid, chunk_id, ent.confidence],
+            )?;
+
+            entity_id_map.insert(ent.normalized.clone(), eid);
+        }
+
+        // Record co-occurrence edges
+        for rel in relations {
+            if let (Some(src_id), Some(dst_id)) = (entity_id_map.get(&rel.src_normalized), entity_id_map.get(&rel.dst_normalized)) {
+                let edge_id = new_id();
+                tx.execute(
+                    "INSERT INTO edges(id, src_id, dst_id, relation, weight, evidence_chunk_id, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![edge_id, src_id, dst_id, rel.relation, rel.weight, chunk_id, now],
+                )?;
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// List all recognized entities ordered by mention count.
+    pub fn list_top_entities(&self, limit: usize) -> Result<Vec<(String, String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.kind, e.name, COUNT(m.chunk_id) as mention_count
+             FROM entities e
+             LEFT JOIN entity_mentions m ON m.entity_id = e.id
+             GROUP BY e.id
+             ORDER BY mention_count DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
     }
 }
 
@@ -598,5 +679,60 @@ mod tests {
         assert_eq!(auto_cluster_tab("https://store.steampowered.com/app/1"), "Shopping");
         assert_eq!(auto_cluster_tab("https://github.com/rust-lang/rust"), "Development");
         assert_eq!(auto_cluster_tab("https://google.com/search?q=test"), "Search");
+    }
+
+    #[test]
+    fn knowledge_graph_extraction_and_storage() {
+        let s = store();
+        let pv = NewPageVersion {
+            url: "https://github.com/Yonawie/Browse",
+            title: Some("Browse"),
+            lang: Some("en"),
+            page_kind: PageKind::Doc,
+            sensitivity: Sensitivity::Public,
+            main_text: Some("Browse is built with Rust and SQLite"),
+            content_hash: "hash-kg",
+        };
+        let pvid = s.insert_page_version(&pv).unwrap();
+        let chunk_ids = s.insert_chunks(&pvid, &[NewChunk {
+            ordinal: 0,
+            heading_path: None,
+            text: "Browse is built with Rust and SQLite",
+            char_start: 0,
+            char_end: 35,
+            token_count: 8,
+            suspect_injection: false,
+            embedding: None,
+        }]).unwrap();
+
+        let entities = vec![
+            core_types::ExtractedEntity {
+                kind: "repo".into(),
+                name: "Yonawie/Browse".into(),
+                normalized: "yonawie/browse".into(),
+                confidence: 0.9,
+            },
+            core_types::ExtractedEntity {
+                kind: "topic".into(),
+                name: "Rust".into(),
+                normalized: "rust".into(),
+                confidence: 0.85,
+            },
+        ];
+        let relations = vec![core_types::ExtractedRelation {
+            src_normalized: "yonawie/browse".into(),
+            dst_normalized: "rust".into(),
+            relation: "co_occurs_with".into(),
+            weight: 1.0,
+        }];
+
+        s.record_knowledge_graph(&chunk_ids[0], &entities, &relations).unwrap();
+
+        assert!(s.count("entities").unwrap() >= 2);
+        assert!(s.count("entity_mentions").unwrap() >= 2);
+        assert!(s.count("edges").unwrap() >= 1);
+
+        let top = s.list_top_entities(10).unwrap();
+        assert!(!top.is_empty());
     }
 }

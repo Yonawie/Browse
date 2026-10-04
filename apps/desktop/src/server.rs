@@ -220,6 +220,23 @@ pub async fn dispatch_rpc(
                 .collect();
             Ok(json!(hits_json))
         }
+        "memory.entities" => {
+            let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(20) as usize;
+            let lock = state.store.lock().unwrap();
+            let entities = lock.list_top_entities(limit).unwrap_or_default();
+            let entities_json: Vec<Value> = entities
+                .into_iter()
+                .map(|(id, kind, name, mentions)| {
+                    json!({
+                        "id": id,
+                        "kind": kind,
+                        "name": name,
+                        "mentions": mentions
+                    })
+                })
+                .collect();
+            Ok(json!(entities_json))
+        }
         "system.status" => {
             Ok(json!({
                 "engine": "cdp-chromium",
@@ -459,8 +476,17 @@ mod tests {
             method: "tabs.groups.list".to_string(),
             params: json!({}),
         };
-        let res_list = dispatch_rpc(state, req_list).await.unwrap();
+        let res_list = dispatch_rpc(state.clone(), req_list).await.unwrap();
         assert_eq!(res_list.as_array().unwrap().len(), 1);
+
+        let req_entities = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(23)),
+            method: "memory.entities".to_string(),
+            params: json!({ "limit": 10 }),
+        };
+        let res_entities = dispatch_rpc(state, req_entities).await.unwrap();
+        assert!(res_entities.is_array());
     }
 }
 
