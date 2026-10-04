@@ -21,6 +21,7 @@ mod models;
 mod page;
 mod safety_cmd;
 mod server;
+mod skill_cmd;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -52,9 +53,10 @@ async fn main() {
         Some("shell") => server::shell_command(&args[1..]).await,
         Some("inspect-safety") => safety_cmd::safety_command(&args[1..]).await,
         Some("mcp") => mcp_cmd::mcp_command(&args[1..]).await,
+        Some("skill") => skill_cmd::skill_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>]>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>] | skill <list | render <id> [param=val ...]>>"
             );
             Ok(())
         }
