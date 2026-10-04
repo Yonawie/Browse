@@ -96,6 +96,28 @@ Evaluate any URL and page content for homoglyph attacks, brand spoofing, and dec
 cargo run -p browse-desktop -- inspect-safety https://paypal-security-update.com/login --text "Only 2 items left! Renews automatically at $49/mo."
 ```
 
+### Model Context Protocol (MCP) Server for External Agents
+
+Browse provides a built-in MCP server (`browse-desktop mcp`) allowing external coding and thinking agents (Claude Desktop, Cursor, Claude Code) to browse the web through Browse's secure, policy-governed runtime:
+
+```sh
+cargo run -p browse-desktop -- mcp [--dev-mode] [--auth-token <secret>] [--origin <origin>]
+```
+
+Configure in Claude Desktop (`claude_desktop_config.json`) or Cursor (`mcp.json`):
+```json
+{
+  "mcpServers": {
+    "browse": {
+      "command": "cargo",
+      "args": ["run", "-p", "browse-desktop", "--", "mcp", "--origin", "https://*"]
+    }
+  }
+}
+```
+Exposed tools: `browse_navigate`, `browse_observe`, `browse_click`, `browse_type`, `browse_extract`. Every external action is validated by Browse's deterministic `PolicyEngine` (ADR-005) against indirect prompt injections and unauthorized data exfiltration.
+
+
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
 demo) or `http://hostile.localhost:8765` in any browser; `*.localhost` resolves

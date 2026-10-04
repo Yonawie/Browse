@@ -21,9 +21,10 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | S7 Оболочка: окна, вкладки, омнибокс, WebUI Shell, JSON-RPC & SSE IPC | готово | `6c283c2` | 18 unit (desktop) + embedded asset tests |
 | S8 Вкладки по задачам, безопасность (фишинг, тёмные паттерны, zero-telemetry) | готово | см. git log | 20 unit (page-intelligence) + 11 (memory) + 20 (desktop) |
 | S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | готово | см. git log | хоткеи (Ctrl+T/W/L/B/1..9), темы, мастер онбординга |
+| MCP Extensibility: Model Context Protocol Server (ADR-008) для Claude Desktop / Cursor | готово | см. git log | 19 unit (agent-runtime) + 20 (desktop) + stdio JSON-RPC |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **140 тестов, 0 падений**
-(agent-runtime 25 [15 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 11,
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **144 теста, 0 падений**
+(agent-runtime 29 [19 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 11,
 model-gateway 34 + 3 live, page-intelligence 20, policy 14, desktop 20); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
@@ -187,5 +188,7 @@ S8 (Безопасность и вкладки по задачам) заверш
 
 S9 (Полировка) завершён: глобальные сочетания клавиш (`Ctrl+T/W/L/B/Tab/1..9/Esc`), переключение тёмной/светлой темы с сохранением в `localStorage`, стартовый мастер онбординга с объяснением гарантий приватности и локального инференса.
 
-Все фазы архитектурного плана (S1–S9) полностью реализованы, покрыты 140 тестами (0 падений) и проверены `clippy -D warnings`.
+MCP Extensibility (ADR-008) завершён: полнофункциональный сервер Model Context Protocol (`browse-mcp`) в `crates/agent-runtime/src/mcp.rs` и CLI-команда `browse-desktop mcp [--dev-mode] [--auth-token <t>] [--origin <o>]` в `apps/desktop/src/mcp_cmd.rs`. Предоставляет внешним агентам (Claude Desktop, Cursor) стандартные инструменты `browse_navigate`, `browse_observe`, `browse_click`, `browse_type`, `browse_extract` со строгим контролем `PolicyEngine` (TaskScope, защита от инъекций, запрет действий вне разрешённых origins, валидация auth токена).
+
+Все фазы архитектурного плана (S1–S9 + MCP) полностью реализованы, покрыты 144 тестами (0 падений) и проверены `clippy -D warnings`.
 

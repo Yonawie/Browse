@@ -19,10 +19,12 @@
 //! neither the planner nor the critic can override it.
 
 pub mod io;
+pub mod mcp;
 pub mod planner;
 pub mod tools;
 
 pub use io::*;
+pub use mcp::*;
 pub use planner::*;
 pub use tools::*;
 

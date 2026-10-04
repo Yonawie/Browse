@@ -15,6 +15,7 @@
 
 mod agent_cmd;
 mod journal;
+mod mcp_cmd;
 mod memory_cmd;
 mod models;
 mod page;
@@ -50,9 +51,10 @@ async fn main() {
         Some("run") => agent_cmd::run_command(&args[1..]).await,
         Some("shell") => server::shell_command(&args[1..]).await,
         Some("inspect-safety") => safety_cmd::safety_command(&args[1..]).await,
+        Some("mcp") => mcp_cmd::mcp_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>]>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>]>"
             );
             Ok(())
         }
