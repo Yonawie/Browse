@@ -4,6 +4,7 @@
 //! and the SQLite schema. Everything is `serde`-serializable.
 
 pub mod entity;
+pub mod intent;
 pub mod observation;
 pub mod origin;
 pub mod scope;
@@ -11,6 +12,7 @@ pub mod skill;
 pub mod tool;
 
 pub use entity::*;
+pub use intent::*;
 pub use observation::*;
 pub use origin::*;
 pub use scope::*;

@@ -274,6 +274,11 @@ pub async fn dispatch_rpc(
                 "status": "ready"
             }))
         }
+        "omnibox.classify" => {
+            let input = req.params.get("input").and_then(Value::as_str).unwrap_or("");
+            let classification = core_types::classify_omnibox_input(input);
+            Ok(json!(classification))
+        }
         _ => Err(json!({ "code": -32601, "message": format!("Method not found: {method}") })),
     }
 }
@@ -536,8 +541,18 @@ mod tests {
                 "parameters": { "repo": "Yonawie/Browse" }
             }),
         };
-        let res_render = dispatch_rpc(state, req_render).await.unwrap();
+        let res_render = dispatch_rpc(state.clone(), req_render).await.unwrap();
         assert!(res_render["prompt"].as_str().unwrap().contains("https://github.com/Yonawie/Browse/issues"));
+
+        // omnibox.classify
+        let req_classify = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(26)),
+            method: "omnibox.classify".to_string(),
+            params: json!({ "input": "what did I read about SQLite yesterday?" }),
+        };
+        let res_classify = dispatch_rpc(state, req_classify).await.unwrap();
+        assert_eq!(res_classify["kind"], "memory_query");
     }
 }
 

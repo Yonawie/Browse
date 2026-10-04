@@ -133,15 +133,35 @@ class BrowseShell {
       }
     });
     
-    this.omnibox.addEventListener('keydown', (e) => {
+    this.omnibox.addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {
         const val = this.omnibox.value.trim();
-        if (val.startsWith('http://') || val.startsWith('https://')) {
-          this.navigate(val);
+        if (!val) return;
+
+        const classification = await this.rpc('omnibox.classify', { input: val });
+        const kind = classification ? classification.kind : 'search';
+        const query = classification ? classification.query : val;
+
+        if (kind === 'url') {
+          this.navigate(query);
         } else if (val.startsWith('browser://')) {
           this.openInternalPage(val);
+        } else if (kind === 'agent_task') {
+          // Switch to Agent tab, prefill task, open sidebar
+          this.sidebarPane.classList.remove('collapsed');
+          const agentTabBtn = document.querySelector('.sidebar-tab[data-tab="agent"]');
+          if (agentTabBtn) agentTabBtn.click();
+          this.agentTaskInput.value = query;
+        } else if (kind === 'memory_query') {
+          // Switch to Memory tab and trigger search
+          this.sidebarPane.classList.remove('collapsed');
+          const memoryTabBtn = document.querySelector('.sidebar-tab[data-tab="memory"]');
+          if (memoryTabBtn) memoryTabBtn.click();
+          this.memoryInput.value = query;
+          this.searchMemory();
         } else {
-          this.navigate('https://duckduckgo.com/?q=' + encodeURIComponent(val));
+          // Default: Search via DuckDuckGo
+          this.navigate('https://duckduckgo.com/?q=' + encodeURIComponent(query));
         }
       }
     });
