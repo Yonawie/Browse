@@ -34,6 +34,17 @@ pub struct TabRecord {
     pub opened_at: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PruneCandidate {
+    pub tab_id: String,
+    pub url: String,
+    pub title: String,
+    pub group: Option<String>,
+    pub inactive_duration_ms: i64,
+    pub is_indexed: bool,
+    pub reason: String,
+}
+
 pub struct MemoryStore {
     conn: Connection,
     /// Embedding dimensionality enforced on insert (256 by default, ADR-003).
@@ -387,6 +398,52 @@ impl MemoryStore {
         Ok(())
     }
 
+    /// Check whether a URL has been indexed in memory (page + page_version).
+    pub fn is_url_indexed(&self, url: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pages p JOIN page_versions pv ON pv.page_id = p.id WHERE p.url = ?1",
+            params![url],
+            |r| r.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Find tabs eligible for pruning: inactive for >= stale_threshold_ms, not pinned.
+    /// Checks memory indexing status to mark whether closing is safe and recoverable via search (AT-2).
+    pub fn find_prune_candidates(
+        &self,
+        tabs: &[(String, String, String, Option<String>, bool, i64)],
+        stale_threshold_ms: i64,
+        now: i64,
+    ) -> Result<Vec<PruneCandidate>> {
+        let mut candidates = Vec::new();
+        for (id, url, title, group, pinned, last_active_at) in tabs {
+            if *pinned {
+                continue;
+            }
+            let inactive_ms = now.saturating_sub(*last_active_at);
+            if inactive_ms >= stale_threshold_ms {
+                let indexed = self.is_url_indexed(url)?;
+                let days = inactive_ms / (24 * 3600 * 1000);
+                let reason = if indexed {
+                    format!("Inactive for {days}d, safe to close (indexed in memory)")
+                } else {
+                    format!("Inactive for {days}d")
+                };
+                candidates.push(PruneCandidate {
+                    tab_id: id.clone(),
+                    url: url.clone(),
+                    title: title.clone(),
+                    group: group.clone(),
+                    inactive_duration_ms: inactive_ms,
+                    is_indexed: indexed,
+                    reason,
+                });
+            }
+        }
+        Ok(candidates)
+    }
+
     // -- knowledge graph ---------------------------------------------------
 
     /// Insert or retrieve entities, record mentions for a chunk, and record relations/edges.
@@ -734,5 +791,48 @@ mod tests {
 
         let top = s.list_top_entities(10).unwrap();
         assert!(!top.is_empty());
+    }
+
+    #[test]
+    fn tab_pruning_and_hygiene() {
+        let s = store();
+
+        // 1. Index one page
+        let pv = NewPageVersion {
+            url: "https://docs.rs/tokio",
+            title: Some("Tokio Docs"),
+            lang: Some("en"),
+            page_kind: PageKind::Doc,
+            sensitivity: Sensitivity::Public,
+            main_text: Some("Asynchronous runtime for Rust"),
+            content_hash: "hash-tokio",
+        };
+        s.insert_page_version(&pv).unwrap();
+
+        assert!(s.is_url_indexed("https://docs.rs/tokio").unwrap());
+        assert!(!s.is_url_indexed("https://unvisited.example.com").unwrap());
+
+        // 2. Set up tabs: one active recently, one stale & indexed, one stale & unindexed, one pinned
+        let now = 1_000_000_000;
+        let three_days_ms = 3 * 24 * 3600 * 1000;
+
+        let tabs = vec![
+            ("tab-recent".into(), "https://example.com".into(), "Recent".into(), None, false, now - 1000),
+            ("tab-stale-indexed".into(), "https://docs.rs/tokio".into(), "Tokio Docs".into(), Some("Docs".into()), false, now - three_days_ms - 5000),
+            ("tab-stale-unindexed".into(), "https://unvisited.example.com".into(), "Unvisited".into(), None, false, now - three_days_ms - 10000),
+            ("tab-pinned-stale".into(), "https://pinned.example.com".into(), "Pinned".into(), None, true, now - three_days_ms - 20000),
+        ];
+
+        let candidates = s.find_prune_candidates(&tabs, three_days_ms, now).unwrap();
+
+        // Pinned and recent tabs must NOT be candidates
+        assert_eq!(candidates.len(), 2);
+
+        let cand_indexed = candidates.iter().find(|c| c.tab_id == "tab-stale-indexed").unwrap();
+        assert!(cand_indexed.is_indexed);
+        assert!(cand_indexed.reason.contains("safe to close"));
+
+        let cand_unindexed = candidates.iter().find(|c| c.tab_id == "tab-stale-unindexed").unwrap();
+        assert!(!cand_unindexed.is_indexed);
     }
 }

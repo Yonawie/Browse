@@ -905,3 +905,92 @@ body.light-theme {
   justify-content: flex-end;
 }
 
+/* Tab Pruning & Hygiene (AT-2) */
+.prune-badge {
+  background: var(--warning-light) !important;
+  color: var(--warning) !important;
+  border: 1px solid rgba(245, 166, 35, 0.4) !important;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.prune-badge:hover {
+  background: rgba(245, 166, 35, 0.25) !important;
+  border-color: var(--warning) !important;
+}
+
+.prune-candidate-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-tertiary);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  gap: 12px;
+}
+
+.prune-cand-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.prune-cand-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prune-cand-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.indexed-pill {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--success-light);
+  color: var(--success);
+  border: 1px solid rgba(48, 164, 108, 0.3);
+  font-weight: 500;
+}
+
+/* Floating Toast Banner */
+.toast-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 10px 20px;
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: slideUpFade 0.2s ease;
+}
+
+.toast-banner.hidden {
+  display: none !important;
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+

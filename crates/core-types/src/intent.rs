@@ -23,11 +23,52 @@ pub enum OmniboxIntentKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabCommandAction {
+    CloseByQuery(String),
+    CloseStale,
+    GroupByDomainOrCategory,
+    ArchiveStale,
+    Unknown(String),
+}
+
+pub fn parse_tab_command(input: &str) -> TabCommandAction {
+    let lower = input.trim().to_lowercase();
+    if lower.contains("stale") || lower.contains("inactive") || lower.contains("old") {
+        if lower.contains("archive") {
+            TabCommandAction::ArchiveStale
+        } else {
+            TabCommandAction::CloseStale
+        }
+    } else if lower.starts_with("group") || lower.starts_with("organize") {
+        TabCommandAction::GroupByDomainOrCategory
+    } else if let Some(rest) = lower.strip_prefix("close tabs about ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if let Some(rest) = lower.strip_prefix("close tab about ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if let Some(rest) = lower.strip_prefix("close tabs with ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if let Some(rest) = lower.strip_prefix("close tab with ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if let Some(rest) = lower.strip_prefix("close tabs ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if let Some(rest) = lower.strip_prefix("close tab ") {
+        TabCommandAction::CloseByQuery(rest.trim().to_string())
+    } else if lower.starts_with("archive") || lower.starts_with("prune") {
+        TabCommandAction::ArchiveStale
+    } else {
+        TabCommandAction::Unknown(input.trim().to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmniboxClassification {
     pub kind: OmniboxIntentKind,
     pub query: String,
     pub confidence: u8,
     pub explanation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_action: Option<TabCommandAction>,
 }
 
 /// Classify free-form omnibox input into an explicit intent.
@@ -39,6 +80,7 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: String::new(),
             confidence: 100,
             explanation: "Empty input defaults to search".into(),
+            tab_action: None,
         };
     }
 
@@ -56,6 +98,7 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: trimmed.to_string(),
             confidence: 99,
             explanation: "Direct web protocol URL".into(),
+            tab_action: None,
         };
     }
 
@@ -74,23 +117,31 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: url_formatted,
             confidence: 95,
             explanation: "Standard web domain name".into(),
+            tab_action: None,
         };
     }
 
     // 2. Tab management commands
-    if lower.starts_with("close tab")
-        || lower.starts_with("close tabs")
-        || lower.starts_with("group tabs")
-        || lower.starts_with("organize tabs")
-        || lower.starts_with("archive tabs")
-        || lower.starts_with("mute tab")
-        || lower.starts_with("pin tab")
-    {
+    let is_tab_cmd = (lower.starts_with("close ")
+        || lower.starts_with("group ")
+        || lower.starts_with("organize ")
+        || lower.starts_with("archive ")
+        || lower.starts_with("prune ")
+        || lower.starts_with("mute ")
+        || lower.starts_with("pin "))
+        && (lower.contains("tab") || lower.contains("tabs"))
+        || lower == "group tabs"
+        || lower == "organize tabs"
+        || lower == "prune tabs"
+        || lower == "archive tabs";
+
+    if is_tab_cmd {
         return OmniboxClassification {
             kind: OmniboxIntentKind::TabCommand,
             query: trimmed.to_string(),
             confidence: 95,
             explanation: "Browser tab organization command".into(),
+            tab_action: Some(parse_tab_command(trimmed)),
         };
     }
 
@@ -110,6 +161,7 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: trimmed.to_string(),
             confidence: 90,
             explanation: "Multi-step autonomous web task".into(),
+            tab_action: None,
         };
     }
 
@@ -129,6 +181,7 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: trimmed.to_string(),
             confidence: 90,
             explanation: "Personal memory & browsing history recall".into(),
+            tab_action: None,
         };
     }
 
@@ -138,6 +191,7 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
         query: trimmed.to_string(),
         confidence: 85,
         explanation: "Web search query".into(),
+        tab_action: None,
     }
 }
 
@@ -154,8 +208,29 @@ mod tests {
 
     #[test]
     fn classifies_tab_commands() {
-        assert_eq!(classify_omnibox_input("close tabs about shopping").kind, OmniboxIntentKind::TabCommand);
-        assert_eq!(classify_omnibox_input("group tabs by project").kind, OmniboxIntentKind::TabCommand);
+        let c1 = classify_omnibox_input("close tabs about shopping");
+        assert_eq!(c1.kind, OmniboxIntentKind::TabCommand);
+        assert_eq!(c1.tab_action, Some(TabCommandAction::CloseByQuery("shopping".into())));
+
+        let c2 = classify_omnibox_input("group tabs by project");
+        assert_eq!(c2.kind, OmniboxIntentKind::TabCommand);
+        assert_eq!(c2.tab_action, Some(TabCommandAction::GroupByDomainOrCategory));
+
+        let c3 = classify_omnibox_input("close stale tabs");
+        assert_eq!(c3.kind, OmniboxIntentKind::TabCommand);
+        assert_eq!(c3.tab_action, Some(TabCommandAction::CloseStale));
+
+        let c4 = classify_omnibox_input("prune tabs");
+        assert_eq!(c4.kind, OmniboxIntentKind::TabCommand);
+        assert_eq!(c4.tab_action, Some(TabCommandAction::ArchiveStale));
+    }
+
+    #[test]
+    fn parses_tab_command_actions() {
+        assert_eq!(parse_tab_command("close tabs about amazon"), TabCommandAction::CloseByQuery("amazon".into()));
+        assert_eq!(parse_tab_command("close inactive tabs"), TabCommandAction::CloseStale);
+        assert_eq!(parse_tab_command("archive stale tabs"), TabCommandAction::ArchiveStale);
+        assert_eq!(parse_tab_command("organize tabs"), TabCommandAction::GroupByDomainOrCategory);
     }
 
     #[test]

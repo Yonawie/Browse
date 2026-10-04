@@ -12,6 +12,7 @@ class BrowseShell {
     this.connectEventStream();
     this.fetchTabs();
     this.fetchMemoryStats();
+    this.checkPruneCandidates();
   }
 
   initElements() {
@@ -23,6 +24,15 @@ class BrowseShell {
     this.webFrame = document.getElementById('web-frame');
     this.sidebarPane = document.getElementById('sidebar-pane');
     this.toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
+
+    // Tab Hygiene (AT-2)
+    this.tabPruneBadge = document.getElementById('tab-prune-badge');
+    this.pruneCount = document.getElementById('prune-count');
+    this.pruneModal = document.getElementById('prune-modal');
+    this.pruneCandidatesContainer = document.getElementById('prune-candidates-container');
+    this.btnDismissPrune = document.getElementById('btn-dismiss-prune');
+    this.btnArchiveAllPrune = document.getElementById('btn-archive-all-prune');
+    this.toastBanner = document.getElementById('toast-banner');
 
     // Sidebar navigation
     this.sidebarTabs = document.querySelectorAll('.sidebar-tab');
@@ -77,6 +87,29 @@ class BrowseShell {
       });
     }
 
+    // Tab Hygiene interactions
+    if (this.tabPruneBadge) {
+      this.tabPruneBadge.addEventListener('click', () => {
+        if (this.pruneModal) this.pruneModal.classList.remove('hidden');
+      });
+    }
+    if (this.btnDismissPrune) {
+      this.btnDismissPrune.addEventListener('click', () => {
+        if (this.pruneModal) this.pruneModal.classList.add('hidden');
+      });
+    }
+    if (this.btnArchiveAllPrune) {
+      this.btnArchiveAllPrune.addEventListener('click', async () => {
+        const res = await this.rpc('tabs.archive', {});
+        if (this.pruneModal) this.pruneModal.classList.add('hidden');
+        if (res) {
+          this.showToast(`Archived ${res.archived_count || 0} stale tab(s) to memory`);
+        }
+        await this.fetchTabs();
+        await this.checkPruneCandidates();
+      });
+    }
+
     // First-run onboarding wizard
     const onboardingModal = document.getElementById('onboarding-modal');
     const finishOnboardingBtn = document.getElementById('btn-finish-onboarding');
@@ -124,6 +157,8 @@ class BrowseShell {
       } else if (e.key === 'Escape') {
         if (!this.confirmationCard.classList.contains('hidden')) {
           this.respondConfirmation('rejected');
+        } else if (this.pruneModal && !this.pruneModal.classList.contains('hidden')) {
+          this.pruneModal.classList.add('hidden');
         } else if (onboardingModal && !onboardingModal.classList.contains('hidden')) {
           onboardingModal.classList.add('hidden');
           localStorage.setItem('browse_onboarded', 'true');
@@ -146,6 +181,23 @@ class BrowseShell {
           this.navigate(query);
         } else if (val.startsWith('browser://')) {
           this.openInternalPage(val);
+        } else if (kind === 'tab_command') {
+          const res = await this.rpc('tabs.execute_command', { command: val });
+          if (res) {
+            if (res.action === 'closed') {
+              this.showToast(`Closed ${res.count} tab(s) matching "${res.topic || val}"`);
+            } else if (res.action === 'grouped') {
+              this.showToast(`Organized ${res.count} tabs into task clusters`);
+            } else if (res.action === 'closed_stale') {
+              this.showToast(`Closed ${res.count} inactive tab(s)`);
+            } else if (res.action === 'archived_stale') {
+              this.showToast(`Archived ${res.count} stale tab(s) to local memory`);
+            } else {
+              this.showToast(`Executed: ${val}`);
+            }
+            await this.fetchTabs();
+            await this.checkPruneCandidates();
+          }
         } else if (kind === 'agent_task') {
           // Switch to Agent tab, prefill task, open sidebar
           this.sidebarPane.classList.remove('collapsed');
@@ -331,9 +383,11 @@ class BrowseShell {
   switchTab(tabId) {
     this.tabs.forEach(t => t.active = (t.id === tabId));
     this.renderTabs();
+    this.rpc('tabs.switch', { tab_id: tabId });
   }
 
   closeTab(tabId) {
+    this.rpc('tabs.close', { tab_id: tabId });
     this.tabs = this.tabs.filter(t => t.id !== tabId);
     if (this.tabs.length === 0) {
       this.createTab('https://example.com');
@@ -342,6 +396,53 @@ class BrowseShell {
         this.tabs[0].active = true;
       }
       this.renderTabs();
+    }
+    this.checkPruneCandidates();
+  }
+
+  showToast(msg) {
+    if (!this.toastBanner) return;
+    this.toastBanner.textContent = msg;
+    this.toastBanner.classList.remove('hidden');
+    clearTimeout(this.toastTimeout);
+    this.toastTimeout = setTimeout(() => {
+      this.toastBanner.classList.add('hidden');
+    }, 3500);
+  }
+
+  async checkPruneCandidates() {
+    const candidates = await this.rpc('tabs.suggest_pruning', {}) || [];
+    if (!this.tabPruneBadge) return;
+    if (candidates.length > 0) {
+      if (this.pruneCount) this.pruneCount.textContent = candidates.length;
+      this.tabPruneBadge.classList.remove('hidden');
+      if (this.pruneCandidatesContainer) {
+        this.pruneCandidatesContainer.innerHTML = '';
+        candidates.forEach(cand => {
+          const item = document.createElement('div');
+          item.className = 'prune-candidate-item';
+          const indexedBadge = cand.is_indexed ? '<span class="indexed-pill">Indexed in Memory</span>' : '';
+          item.innerHTML = `
+            <div class="prune-cand-info">
+              <span class="prune-cand-title">${this.escapeHtml(cand.title || cand.url)}</span>
+              <span class="prune-cand-meta">${this.escapeHtml(cand.reason)}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              ${indexedBadge}
+              <button class="btn-secondary btn-archive-single" data-id="${cand.tab_id}" style="padding:4px 8px; font-size:11px;">Archive</button>
+            </div>
+          `;
+          item.querySelector('.btn-archive-single').addEventListener('click', async () => {
+            await this.rpc('tabs.archive', { tab_ids: [cand.tab_id] });
+            this.showToast('Archived tab to memory');
+            await this.fetchTabs();
+            await this.checkPruneCandidates();
+          });
+          this.pruneCandidatesContainer.appendChild(item);
+        });
+      }
+    } else {
+      this.tabPruneBadge.classList.add('hidden');
     }
   }
 

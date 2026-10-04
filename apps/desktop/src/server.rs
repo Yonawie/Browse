@@ -10,9 +10,9 @@ use axum::http::header;
 use axum::response::{sse::Event, sse::Sse, Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Json;
-use core_types::Sensitivity;
+use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
-use memory::{auto_cluster_tab, MemoryStore, SearchFilters};
+use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters};
 use page_intelligence::{detect_dark_patterns, inspect_url_phishing};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -32,6 +32,10 @@ pub struct TabInfo {
     pub active: bool,
     #[serde(default)]
     pub group: Option<String>,
+    #[serde(default)]
+    pub last_active_at: i64,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Clone)]
@@ -119,6 +123,8 @@ pub async fn dispatch_rpc(
                 profile: profile.to_string(),
                 active: true,
                 group,
+                last_active_at: now_ms(),
+                pinned: false,
             };
             tabs.push(new_tab.clone());
             Ok(json!(new_tab))
@@ -132,6 +138,34 @@ pub async fn dispatch_rpc(
                     tab.url = url.to_string();
                     tab.title = url.to_string();
                     tab.group = Some(auto_cluster_tab(url).to_string());
+                    tab.last_active_at = now_ms();
+                }
+            }
+            Ok(json!({ "status": "ok" }))
+        }
+        "tabs.switch" | "tabs.activate" => {
+            let tab_id = req.params.get("tab_id").and_then(Value::as_str);
+            if let Some(id) = tab_id {
+                let mut tabs = state.tabs.lock().unwrap();
+                let now = now_ms();
+                for t in tabs.iter_mut() {
+                    if t.id == id {
+                        t.active = true;
+                        t.last_active_at = now;
+                    } else {
+                        t.active = false;
+                    }
+                }
+            }
+            Ok(json!({ "status": "ok" }))
+        }
+        "tabs.pin" => {
+            let tab_id = req.params.get("tab_id").and_then(Value::as_str);
+            let pinned = req.params.get("pinned").and_then(Value::as_bool).unwrap_or(true);
+            if let Some(id) = tab_id {
+                let mut tabs = state.tabs.lock().unwrap();
+                if let Some(tab) = tabs.iter_mut().find(|t| t.id == id) {
+                    tab.pinned = pinned;
                 }
             }
             Ok(json!({ "status": "ok" }))
@@ -146,6 +180,146 @@ pub async fn dispatch_rpc(
                 }
             }
             Ok(json!({ "status": "ok" }))
+        }
+        "tabs.suggest_pruning" => {
+            let threshold_ms = req.params.get("threshold_ms")
+                .and_then(Value::as_i64)
+                .unwrap_or(3 * 24 * 3600 * 1000); // 3 days default (AT-2)
+            let now = now_ms();
+            let tab_tuples: Vec<(String, String, String, Option<String>, bool, i64)> = {
+                let tabs = state.tabs.lock().unwrap();
+                tabs.iter()
+                    .filter(|t| !t.active)
+                    .map(|t| (t.id.clone(), t.url.clone(), t.title.clone(), t.group.clone(), t.pinned, t.last_active_at))
+                    .collect()
+            };
+            let lock = state.store.lock().unwrap();
+            let candidates = lock.find_prune_candidates(&tab_tuples, threshold_ms, now).unwrap_or_default();
+            Ok(json!(candidates))
+        }
+        "tabs.archive" => {
+            let tab_ids: Vec<String> = req.params.get("tab_ids")
+                .and_then(Value::as_array)
+                .map(|arr| arr.iter().filter_map(Value::as_str).map(ToString::to_string).collect())
+                .unwrap_or_default();
+
+            let mut closed_ids = Vec::new();
+            {
+                let mut tabs = state.tabs.lock().unwrap();
+                let store = state.store.lock().unwrap();
+                let to_archive: Vec<TabInfo> = tabs.iter()
+                    .filter(|t| (tab_ids.is_empty() || tab_ids.contains(&t.id)) && !t.pinned && !t.active)
+                    .cloned()
+                    .collect();
+
+                for tab in &to_archive {
+                    let _ = store.upsert_page(&tab.url, false);
+                    closed_ids.push(tab.id.clone());
+                }
+                tabs.retain(|t| !closed_ids.contains(&t.id));
+                if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                    tabs[0].active = true;
+                }
+            }
+            let closed_count = closed_ids.len();
+            Ok(json!({ "archived_count": closed_count, "closed_ids": closed_ids }))
+        }
+        "tabs.execute_command" => {
+            let cmd_str = req.params.get("command").and_then(Value::as_str).unwrap_or("");
+            let parsed_action = parse_tab_command(cmd_str);
+            match parsed_action {
+                TabCommandAction::CloseByQuery(ref topic) => {
+                    let topic_lower = topic.to_lowercase();
+                    let mut tabs = state.tabs.lock().unwrap();
+                    let before_len = tabs.len();
+                    tabs.retain(|t| {
+                        if t.pinned {
+                            return true;
+                        }
+                        let matches_url = t.url.to_lowercase().contains(&topic_lower);
+                        let matches_title = t.title.to_lowercase().contains(&topic_lower);
+                        let matches_group = t.group.as_ref().map(|g| g.to_lowercase().contains(&topic_lower)).unwrap_or(false);
+                        !(matches_url || matches_title || matches_group)
+                    });
+                    let closed = before_len - tabs.len();
+                    if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                        tabs[0].active = true;
+                    }
+                    Ok(json!({
+                        "action": "closed",
+                        "topic": topic,
+                        "count": closed
+                    }))
+                }
+                TabCommandAction::GroupByDomainOrCategory => {
+                    let mut tabs = state.tabs.lock().unwrap();
+                    let count = tabs.len();
+                    for t in tabs.iter_mut() {
+                        t.group = Some(auto_cluster_tab(&t.url).to_string());
+                    }
+                    Ok(json!({
+                        "action": "grouped",
+                        "count": count
+                    }))
+                }
+                TabCommandAction::CloseStale => {
+                    let threshold_ms = 3 * 24 * 3600 * 1000;
+                    let now = now_ms();
+                    let mut tabs = state.tabs.lock().unwrap();
+                    let before_len = tabs.len();
+                    tabs.retain(|t| {
+                        if t.pinned || t.active {
+                            return true;
+                        }
+                        let inactive_ms = now.saturating_sub(t.last_active_at);
+                        inactive_ms < threshold_ms
+                    });
+                    let closed = before_len - tabs.len();
+                    if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                        tabs[0].active = true;
+                    }
+                    Ok(json!({
+                        "action": "closed_stale",
+                        "count": closed
+                    }))
+                }
+                TabCommandAction::ArchiveStale => {
+                    let threshold_ms = 3 * 24 * 3600 * 1000;
+                    let now = now_ms();
+                    let mut tabs = state.tabs.lock().unwrap();
+                    let store = state.store.lock().unwrap();
+                    let before_len = tabs.len();
+                    let stale_urls: Vec<String> = tabs.iter()
+                        .filter(|t| !t.pinned && !t.active && now.saturating_sub(t.last_active_at) >= threshold_ms)
+                        .map(|t| t.url.clone())
+                        .collect();
+                    for url in &stale_urls {
+                        let _ = store.upsert_page(url, false);
+                    }
+                    tabs.retain(|t| {
+                        if t.pinned || t.active {
+                            return true;
+                        }
+                        let inactive_ms = now.saturating_sub(t.last_active_at);
+                        inactive_ms < threshold_ms
+                    });
+                    let archived = before_len - tabs.len();
+                    if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                        tabs[0].active = true;
+                    }
+                    Ok(json!({
+                        "action": "archived_stale",
+                        "count": archived
+                    }))
+                }
+                TabCommandAction::Unknown(ref cmd) => {
+                    Ok(json!({
+                        "action": "unknown",
+                        "command": cmd,
+                        "count": 0
+                    }))
+                }
+            }
         }
         "page.analyze_safety" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
@@ -337,6 +511,8 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             profile: "User".to_string(),
             active: true,
             group: Some("General".to_string()),
+            last_active_at: now_ms(),
+            pinned: false,
         },
         TabInfo {
             id: "tab-2".to_string(),
@@ -345,6 +521,8 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             profile: "Agent".to_string(),
             active: false,
             group: Some("Shopping".to_string()),
+            last_active_at: now_ms(),
+            pinned: false,
         },
     ];
 
@@ -413,6 +591,8 @@ mod tests {
                 profile: "Personal".to_string(),
                 active: true,
                 group: Some("General".to_string()),
+                last_active_at: now_ms(),
+                pinned: false,
             }])),
             store,
         };
@@ -551,8 +731,100 @@ mod tests {
             method: "omnibox.classify".to_string(),
             params: json!({ "input": "what did I read about SQLite yesterday?" }),
         };
-        let res_classify = dispatch_rpc(state, req_classify).await.unwrap();
+        let res_classify = dispatch_rpc(state.clone(), req_classify).await.unwrap();
         assert_eq!(res_classify["kind"], "memory_query");
+    }
+
+    #[tokio::test]
+    async fn rpc_tab_pruning_and_command_execution() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let now = now_ms();
+        let four_days_ago = now - (4 * 24 * 3600 * 1000);
+
+        // Pre-populate memory with indexed page
+        store.lock().unwrap().insert_page_version(&memory::NewPageVersion {
+            url: "https://shop.example.com",
+            title: Some("Old Shop"),
+            lang: Some("en"),
+            page_kind: core_types::PageKind::Product,
+            sensitivity: Sensitivity::Public,
+            main_text: Some("Special sale"),
+            content_hash: "hash-shop-prune",
+        }).unwrap();
+
+        let state = ShellServerState {
+            tabs: Arc::new(Mutex::new(vec![
+                TabInfo {
+                    id: "tab-active".to_string(),
+                    url: "https://active.example.com".to_string(),
+                    title: "Active Work".to_string(),
+                    profile: "User".to_string(),
+                    active: true,
+                    group: Some("Work".to_string()),
+                    last_active_at: now,
+                    pinned: false,
+                },
+                TabInfo {
+                    id: "tab-stale".to_string(),
+                    url: "https://shop.example.com".to_string(),
+                    title: "Shopping Item".to_string(),
+                    profile: "User".to_string(),
+                    active: false,
+                    group: Some("Shopping".to_string()),
+                    last_active_at: four_days_ago,
+                    pinned: false,
+                },
+                TabInfo {
+                    id: "tab-pinned".to_string(),
+                    url: "https://pinned.example.com".to_string(),
+                    title: "Pinned Tab".to_string(),
+                    profile: "User".to_string(),
+                    active: false,
+                    group: None,
+                    last_active_at: four_days_ago,
+                    pinned: true,
+                },
+            ])),
+            store,
+        };
+
+        // 1. Suggest pruning (AT-2)
+        let req_prune = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(30)),
+            method: "tabs.suggest_pruning".to_string(),
+            params: json!({}),
+        };
+        let res_prune = dispatch_rpc(state.clone(), req_prune).await.unwrap();
+        let cands = res_prune.as_array().unwrap();
+        assert_eq!(cands.len(), 1);
+        assert_eq!(cands[0]["tab_id"], "tab-stale");
+        assert_eq!(cands[0]["is_indexed"], true);
+
+        // 2. Tab command execution: close by topic (IN-2)
+        let req_cmd = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(31)),
+            method: "tabs.execute_command".to_string(),
+            params: json!({ "command": "close tabs about shopping" }),
+        };
+        let res_cmd = dispatch_rpc(state.clone(), req_cmd).await.unwrap();
+        assert_eq!(res_cmd["action"], "closed");
+        assert_eq!(res_cmd["count"], 1);
+
+        let remaining = state.tabs.lock().unwrap().clone();
+        assert_eq!(remaining.len(), 2);
+        assert!(!remaining.iter().any(|t| t.id == "tab-stale"));
+
+        // 3. Tab command: group tabs
+        let req_group = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(32)),
+            method: "tabs.execute_command".to_string(),
+            params: json!({ "command": "group tabs" }),
+        };
+        let res_group = dispatch_rpc(state, req_group).await.unwrap();
+        assert_eq!(res_group["action"], "grouped");
     }
 }
 

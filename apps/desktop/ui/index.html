@@ -16,6 +16,7 @@
       <button class="btn-icon new-tab-btn" id="new-tab-btn" title="New Tab">+</button>
       <div class="window-controls">
         <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
+        <button class="badge prune-badge hidden" id="tab-prune-badge" title="Tab Hygiene: Archive Stale Tabs">🧹 Stale Tabs (<span id="prune-count">0</span>)</button>
         <span class="badge offline-badge" id="privacy-badge">Zero Telemetry</span>
       </div>
     </header>
@@ -254,6 +255,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab Pruning & Hygiene Modal (AT-2) -->
+    <div id="prune-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card">
+        <div class="onboarding-header">
+          <h2>🧹 Tab Hygiene & Pruning</h2>
+          <span class="subtitle">Tabs inactive for 3+ days. Safe to archive — everything is retained in memory.</span>
+        </div>
+        <div class="onboarding-body" id="prune-candidates-container">
+          <!-- Dynamically populated candidate items -->
+        </div>
+        <div class="onboarding-footer" style="gap: 10px;">
+          <button class="btn-secondary" id="btn-dismiss-prune">Keep All Tabs</button>
+          <button class="btn-primary" id="btn-archive-all-prune">Archive & Close Stale Tabs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast Banner -->
+    <div id="toast-banner" class="toast-banner hidden"></div>
   </div>
 
   <script src="/app.js"></script>
