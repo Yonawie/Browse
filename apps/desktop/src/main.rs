@@ -54,9 +54,10 @@ async fn main() {
         Some("inspect-safety") => safety_cmd::safety_command(&args[1..]).await,
         Some("mcp") => mcp_cmd::mcp_command(&args[1..]).await,
         Some("skill") => skill_cmd::skill_command(&args[1..]).await,
+        Some("playwright") => playwright_command(&args[1..]),
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang> | diff> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>] | skill <list | render <id> [param=val ...]>>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang> | diff> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>] | skill <list | render <id> [param=val ...]> | playwright [url] [--python]>"
             );
             Ok(())
         }
@@ -84,6 +85,22 @@ fn schema_check() -> Result<(), Box<dyn std::error::Error>> {
     for t in tables {
         println!("  {t:<18} {}", store.count(t)?);
     }
+    Ok(())
+}
+
+fn playwright_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let url = args.first().filter(|u| u.starts_with("http")).map(String::as_str).unwrap_or("https://example.com");
+    let lang = if args.iter().any(|a| a == "--python" || a == "python") {
+        agent_runtime::ScriptLanguage::Python
+    } else {
+        agent_runtime::ScriptLanguage::TypeScript
+    };
+    let actions = vec![
+        agent_runtime::RecordedAction::navigate(url),
+        agent_runtime::RecordedAction::click(Some("button"), Some("Get Started")),
+    ];
+    let script = agent_runtime::generate_playwright_script("Exported Browser Scenario", &actions, lang);
+    println!("{}", script.code);
     Ok(())
 }
 

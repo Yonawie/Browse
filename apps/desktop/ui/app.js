@@ -9,6 +9,8 @@ class BrowseShell {
 
     this.focusMode = false;
     this.currentSelection = null;
+    this.recordedActions = [];
+    this.playwrightLang = 'typescript';
 
     this.initElements();
     this.initEvents();
@@ -79,6 +81,15 @@ class BrowseShell {
     this.memoryResults = document.getElementById('memory-results');
     this.kgTags = document.getElementById('knowledge-graph-tags');
     this.btnRefreshKg = document.getElementById('btn-refresh-kg');
+
+    // Playwright export (D-2)
+    this.btnExportPlaywright = document.getElementById('btn-export-playwright');
+    this.playwrightModal = document.getElementById('playwright-modal');
+    this.playwrightCodePreview = document.getElementById('playwright-code-preview');
+    this.btnLangTs = document.getElementById('btn-lang-ts');
+    this.btnLangPy = document.getElementById('btn-lang-py');
+    this.btnCopyPlaywright = document.getElementById('btn-copy-playwright');
+    this.btnDismissPlaywright = document.getElementById('btn-dismiss-playwright');
   }
 
   initEvents() {
@@ -333,6 +344,40 @@ class BrowseShell {
       this.btnRefreshKg.addEventListener('click', () => this.loadKnowledgeGraph());
     }
 
+    // Playwright export (D-2)
+    if (this.btnExportPlaywright) {
+      this.btnExportPlaywright.addEventListener('click', () => this.showPlaywrightModal());
+    }
+    if (this.btnDismissPlaywright) {
+      this.btnDismissPlaywright.addEventListener('click', () => {
+        if (this.playwrightModal) this.playwrightModal.classList.add('hidden');
+      });
+    }
+    if (this.btnLangTs) {
+      this.btnLangTs.addEventListener('click', () => {
+        this.playwrightLang = 'typescript';
+        this.btnLangTs.classList.add('active');
+        if (this.btnLangPy) this.btnLangPy.classList.remove('active');
+        this.renderPlaywrightScript();
+      });
+    }
+    if (this.btnLangPy) {
+      this.btnLangPy.addEventListener('click', () => {
+        this.playwrightLang = 'python';
+        this.btnLangPy.classList.add('active');
+        if (this.btnLangTs) this.btnLangTs.classList.remove('active');
+        this.renderPlaywrightScript();
+      });
+    }
+    if (this.btnCopyPlaywright) {
+      this.btnCopyPlaywright.addEventListener('click', () => {
+        if (this.playwrightCodePreview) {
+          navigator.clipboard.writeText(this.playwrightCodePreview.textContent);
+          this.showToast('📋 Playwright script copied to clipboard!');
+        }
+      });
+    }
+
     // Load available skills
     this.fetchSkills();
   }
@@ -548,6 +593,7 @@ class BrowseShell {
       this.webFrame.src = url;
       this.analyzeSafety(url);
       this.rpc('tabs.navigate', { tab_id: activeTab.id, url });
+      this.recordedActions.push({ tool: 'navigate', url });
     }
   }
 
@@ -858,6 +904,27 @@ class BrowseShell {
       `;
       this.memoryResults.appendChild(card);
     });
+  }
+
+  async showPlaywrightModal() {
+    if (this.playwrightModal) this.playwrightModal.classList.remove('hidden');
+    await this.renderPlaywrightScript();
+  }
+
+  async renderPlaywrightScript() {
+    const title = (this.agentTaskInput && this.agentTaskInput.value.trim()) || 'Browser Automation Flow';
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const actions = this.recordedActions.length > 0 ? this.recordedActions : [
+      { tool: 'navigate', url: (activeTab ? activeTab.url : 'https://example.com') }
+    ];
+    const res = await this.rpc('session.export_playwright', {
+      title,
+      language: this.playwrightLang,
+      actions
+    });
+    if (res && this.playwrightCodePreview) {
+      this.playwrightCodePreview.textContent = res.code;
+    }
   }
 
   escapeHtml(str) {

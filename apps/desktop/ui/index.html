@@ -142,11 +142,16 @@
 
           <!-- Live Step Audit Trail -->
           <div class="agent-timeline" id="agent-timeline">
-            <h4>Execution Audit Trail</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <h4 style="margin:0;">Execution Audit Trail</h4>
+              <button class="btn-secondary" id="btn-export-playwright" style="font-size:11px; padding:3px 8px; cursor:pointer;" title="Export recorded steps as Playwright test script (D-2)">🎭 Export Playwright</button>
+            </div>
             <div class="timeline-feed" id="timeline-feed">
               <div class="timeline-empty">No active agent task.</div>
             </div>
           </div>
+        </div>
+
         <!-- Tab: Safety & Privacy -->
         <div class="sidebar-content" id="tab-safety">
           <div class="safety-summary-card" id="safety-summary-card">
@@ -280,6 +285,27 @@
         <div class="onboarding-footer" style="gap: 10px;">
           <button class="btn-secondary" id="btn-dismiss-prune">Keep All Tabs</button>
           <button class="btn-primary" id="btn-archive-all-prune">Archive & Close Stale Tabs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Playwright Export Modal (D-2) -->
+    <div id="playwright-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 650px;">
+        <div class="onboarding-header">
+          <h2>🎭 Export Playwright Test Script (D-2)</h2>
+          <span class="subtitle">Generated with resilient role-based locators (getByRole, getByText)</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <button class="btn-chip active" id="btn-lang-ts">TypeScript</button>
+            <button class="btn-chip" id="btn-lang-py">Python</button>
+          </div>
+          <pre id="playwright-code-preview" style="background:var(--bg-main); color:var(--text-main); padding:12px; border-radius:6px; font-size:12px; max-height:280px; overflow-y:auto; border:1px solid var(--border-color); font-family:var(--font-mono); text-align:left;"></pre>
+        </div>
+        <div class="onboarding-footer" style="gap: 10px;">
+          <button class="btn-primary" id="btn-copy-playwright">📋 Copy Code</button>
+          <button class="btn-secondary" id="btn-dismiss-playwright">Close</button>
         </div>
       </div>
     </div>

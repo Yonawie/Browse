@@ -21,12 +21,14 @@
 pub mod io;
 pub mod mcp;
 pub mod planner;
+pub mod playwright;
 pub mod plugin;
 pub mod tools;
 
 pub use io::*;
 pub use mcp::*;
 pub use planner::*;
+pub use playwright::*;
 pub use plugin::*;
 pub use tools::*;
 

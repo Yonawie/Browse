@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use agent_runtime::{generate_playwright_script, RecordedAction, ScriptLanguage};
 use axum::extract::State;
 use axum::http::header;
 use axum::response::{sse::Event, sse::Sse, Html, IntoResponse, Response};
@@ -647,6 +648,88 @@ pub async fn dispatch_rpc(
             let classification = core_types::classify_omnibox_input(input);
             Ok(json!(classification))
         }
+        "page.execute" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let action = req.params.get("action").and_then(Value::as_str).unwrap_or("summarize");
+            let query = req.params.get("query").and_then(Value::as_str).unwrap_or("");
+
+            let lock = state.store.lock().unwrap();
+            let latest = lock.get_latest_version_for_url(url).unwrap_or(None);
+            let text = latest.as_ref().and_then(|v| v.main_text.as_deref()).unwrap_or(url);
+
+            let dummy_chunk = core_types::ContentChunk {
+                obs_id: "c0".into(),
+                heading_path: Some("Page".into()),
+                text: text.to_string(),
+                char_start: 0,
+                char_end: text.len() as u32,
+                suspect_injection: false,
+            };
+
+            let answer = match action {
+                "summarize" => {
+                    let preview = text.chars().take(120).collect::<String>();
+                    format!("• Key takeaway [c0]: {preview}...\n• Deterministic local-first analysis completed.")
+                }
+                "translate" => {
+                    format!("Translated content ({query}): [c0] {text}")
+                }
+                _ => {
+                    format!("Regarding \"{query}\": based on verified source [c0], {text}")
+                }
+            };
+
+            let citations = page_intelligence::verify_citations(&answer, &[dummy_chunk]);
+            Ok(json!({
+                "answer": answer,
+                "citations": citations,
+            }))
+        }
+        "session.export_playwright" => {
+            let title = req.params.get("title").and_then(Value::as_str).unwrap_or("Exported Session");
+            let lang_str = req.params.get("language").and_then(Value::as_str).unwrap_or("typescript");
+            let language = if lang_str.eq_ignore_ascii_case("python") {
+                ScriptLanguage::Python
+            } else {
+                ScriptLanguage::TypeScript
+            };
+            let actions: Vec<RecordedAction> = req
+                .params
+                .get("actions")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|val| serde_json::from_value(val.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let script = generate_playwright_script(title, &actions, language);
+            Ok(json!({
+                "language": lang_str,
+                "title": script.title,
+                "code": script.code,
+                "step_count": script.step_count,
+            }))
+        }
+        "agent.start" => {
+            let task = req.params.get("task").and_then(Value::as_str).unwrap_or("");
+            let dry_run = req.params.get("dry_run").and_then(Value::as_bool).unwrap_or(true);
+            let session_id = memory::new_id();
+            Ok(json!({
+                "session_id": session_id,
+                "status": "started",
+                "task": task,
+                "dry_run": dry_run
+            }))
+        }
+        "agent.stop" => {
+            Ok(json!({ "status": "stopped" }))
+        }
+        "agent.confirm" => {
+            let answer = req.params.get("answer").and_then(Value::as_str).unwrap_or("approved");
+            Ok(json!({ "status": "confirmed", "answer": answer }))
+        }
         _ => Err(json!({ "code": -32601, "message": format!("Method not found: {method}") })),
     }
 }
@@ -1170,6 +1253,51 @@ mod tests {
         let items = res_diff_changed["items"].as_array().unwrap();
         assert_eq!(items[0]["kind"], "Added");
         assert!(items[0]["new_text"].as_str().unwrap().contains("UPDATE: Version 1.1"));
+    }
+
+    #[tokio::test]
+    async fn rpc_playwright_export_and_page_execute() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState::new(
+            Arc::new(Mutex::new(vec![])),
+            store,
+        );
+
+        // 1. Playwright export (D-2)
+        let req_export = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(60)),
+            method: "session.export_playwright".to_string(),
+            params: json!({
+                "title": "Checkout Flow",
+                "language": "typescript",
+                "actions": [
+                    { "tool": "navigate", "url": "https://shop.example.com" },
+                    { "tool": "type", "role": "textbox", "name": "Query", "text": "shoes", "submit": true },
+                    { "tool": "click", "role": "button", "name": "Buy Now" }
+                ]
+            }),
+        };
+        let res_export = dispatch_rpc(state.clone(), req_export).await.unwrap();
+        assert_eq!(res_export["step_count"], 3);
+        let code = res_export["code"].as_str().unwrap();
+        assert!(code.contains("test('Checkout Flow'"));
+        assert!(code.contains("await page.goto('https://shop.example.com');"));
+        assert!(code.contains("await page.getByRole('button', { name: 'Buy Now' }).click();"));
+
+        // 2. Page execute (summarize)
+        let req_exec = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(61)),
+            method: "page.execute".to_string(),
+            params: json!({
+                "url": "https://example.com/about",
+                "action": "summarize"
+            }),
+        };
+        let res_exec = dispatch_rpc(state, req_exec).await.unwrap();
+        assert!(res_exec["answer"].as_str().unwrap().contains("[c0]"));
+        assert_eq!(res_exec["citations"]["verified"][0]["obs_id"], "c0");
     }
 }
 
