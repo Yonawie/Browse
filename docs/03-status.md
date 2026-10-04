@@ -29,10 +29,11 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Tab Hygiene & Commands (AT-2 / IN-2): детектирование старых вкладок, архивация, команды | готово | `f41b4dc` | 13 unit (memory) + 23 (desktop) + RPC `tabs.suggest_pruning`, `tabs.archive`, `tabs.execute_command` |
 | Focus Mode & Selection (AT-4 / AT-3 / IN-4): режим фокусировки, приоритизация вкладок, выделение | готово | `1068472` | 24 unit (desktop) + CDP selection + RPC `focus.toggle`, `tabs.prioritize`, `page.selection.*` |
 | Page Diff Across Time (PI-11 / AT-5): дифф страниц во времени, история версий, CLI diff | готово | `bbb320f` | 24 unit (page-intelligence) + 14 (memory) + RPC `page.diff` + CLI `page <url> diff` |
+| Playwright Test Generator (D-2): экспорт тестов из действий браузера с ARIA-селекторами | готово | `5f0f30f` | 32 unit (agent-runtime) + 26 (desktop) + RPC `session.export_playwright` + CLI `playwright` |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **171 тест, 0 падений**
-(agent-runtime 30 [20 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 14,
-model-gateway 34 + 3 live, page-intelligence 24, policy 14, desktop 25); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **174 теста, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 14,
+model-gateway 34 + 3 live, page-intelligence 24, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет
@@ -197,5 +198,5 @@ S9 (Полировка) завершён: глобальные сочетани�
 
 MCP Extensibility (ADR-008) завершён: полнофункциональный сервер Model Context Protocol (`browse-mcp`) в `crates/agent-runtime/src/mcp.rs` и CLI-команда `browse-desktop mcp [--dev-mode] [--auth-token <t>] [--origin <o>]` в `apps/desktop/src/mcp_cmd.rs`. Предоставляет внешним агентам (Claude Desktop, Cursor) стандартные инструменты `browse_navigate`, `browse_observe`, `browse_click`, `browse_type`, `browse_extract` со строгим контролем `PolicyEngine` (TaskScope, защита от инъекций, запрет действий вне разрешённых origins, валидация auth токена).
 
-Все фазы архитектурного плана (S1–S9 + MCP) и расширенные возможности (Attention Management, Page Selection, Page Diff во времени) полностью реализованы, покрыты 171 тестом (0 падений) и проверены `clippy -D warnings`.
+Все фазы архитектурного плана (S1–S9 + MCP) и расширенные возможности (Attention Management, Page Selection, Page Diff во времени, Playwright Test Generator) полностью реализованы, покрыты 174 тестами (0 падений) и проверены `clippy -D warnings`.
 
