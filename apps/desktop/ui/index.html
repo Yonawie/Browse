@@ -94,6 +94,13 @@
             <label for="agent-task-input">Autonomous Goal / Task:</label>
             <textarea id="agent-task-input" rows="2" placeholder="e.g. Find all shoes under $100 and add to cart"></textarea>
             
+            <div style="margin-bottom:8px;">
+              <label for="agent-skill-select" style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">Or choose a pre-configured Skill:</label>
+              <select id="agent-skill-select" style="width:100%;margin-top:4px;padding:6px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:0.85rem;">
+                <option value="">Custom Task (Manual prompt)</option>
+              </select>
+            </div>
+
             <div class="agent-options">
               <label class="checkbox-label">
                 <input type="checkbox" id="agent-dry-run" checked> Dry-Run (stops before irreversible actions)

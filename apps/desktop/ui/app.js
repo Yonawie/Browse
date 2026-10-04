@@ -38,6 +38,7 @@ class BrowseShell {
 
     // Agent
     this.agentTaskInput = document.getElementById('agent-task-input');
+    this.agentSkillSelect = document.getElementById('agent-skill-select');
     this.agentDryRun = document.getElementById('agent-dry-run');
     this.btnStartAgent = document.getElementById('btn-start-agent');
     this.btnStopAgent = document.getElementById('btn-stop-agent');
@@ -182,6 +183,9 @@ class BrowseShell {
     // Agent controls
     this.btnStartAgent.addEventListener('click', () => this.startAgentTask());
     this.btnStopAgent.addEventListener('click', () => this.stopAgentTask());
+    if (this.agentSkillSelect) {
+      this.agentSkillSelect.addEventListener('change', () => this.onSkillSelected());
+    }
 
     // Confirmation card
     this.btnConfApprove.addEventListener('click', () => this.respondConfirmation('approved'));
@@ -196,6 +200,9 @@ class BrowseShell {
     if (this.btnRefreshKg) {
       this.btnRefreshKg.addEventListener('click', () => this.loadKnowledgeGraph());
     }
+
+    // Load available skills
+    this.fetchSkills();
   }
 
   async rpc(method, params = {}) {
@@ -450,6 +457,27 @@ class BrowseShell {
         </div>
       `;
       this.intelligenceOutput.scrollTop = this.intelligenceOutput.scrollHeight;
+    }
+  }
+
+  async fetchSkills() {
+    if (!this.agentSkillSelect) return;
+    const skills = await this.rpc('skills.list') || [];
+    this.skills = skills;
+    skills.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `✦ ${s.name} (${s.category})`;
+      this.agentSkillSelect.appendChild(opt);
+    });
+  }
+
+  onSkillSelected() {
+    const skillId = this.agentSkillSelect.value;
+    if (!skillId) return;
+    const skill = (this.skills || []).find(s => s.id === skillId);
+    if (skill) {
+      this.agentTaskInput.value = skill.prompt_template;
     }
   }
 
