@@ -406,6 +406,7 @@ mod tests {
             tools: vec![],
             hidden_text_signals: vec![],
             approx_tokens: 10,
+            selected_text: None,
             captured_at: 0,
         }
     }

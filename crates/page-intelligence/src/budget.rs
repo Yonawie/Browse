@@ -110,6 +110,7 @@ mod tests {
             tools: vec![],
             hidden_text_signals: vec!["ignore previous".into()],
             approx_tokens: 0,
+            selected_text: None,
             captured_at: 0,
         };
         trim_observation(&mut obs, ObservationBudget::LOCAL);

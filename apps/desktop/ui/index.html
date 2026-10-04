@@ -16,6 +16,7 @@
       <button class="btn-icon new-tab-btn" id="new-tab-btn" title="New Tab">+</button>
       <div class="window-controls">
         <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
+        <button class="badge focus-badge" id="btn-toggle-focus" title="Focus Mode: Filter tabs and defer notifications (AT-4)">🎯 Focus</button>
         <button class="badge prune-badge hidden" id="tab-prune-badge" title="Tab Hygiene: Archive Stale Tabs">🧹 Stale Tabs (<span id="prune-count">0</span>)</button>
         <span class="badge offline-badge" id="privacy-badge">Zero Telemetry</span>
       </div>
@@ -50,6 +51,15 @@
         <div class="webview-header" id="webview-header">
           <span class="current-page-title" id="page-title">Welcome to Browse</span>
           <span class="profile-indicator" id="profile-indicator">Profile: User</span>
+        </div>
+        <div class="selection-bar hidden" id="selection-bar">
+          <span class="selection-icon">✂️</span>
+          <span class="selection-text-preview" id="selection-text-preview">Selected: "..."</span>
+          <div class="selection-actions">
+            <button class="btn-secondary chip-action" id="btn-ask-selection">Ask AI ✦</button>
+            <button class="btn-secondary chip-action" id="btn-summarize-selection">Summarize</button>
+            <button class="btn-icon btn-close-selection" id="btn-clear-selection" title="Clear selection">×</button>
+          </div>
         </div>
         <div class="webview-container" id="webview-frame-container">
           <!-- Active page content or iframe / placeholder -->

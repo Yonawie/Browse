@@ -165,6 +165,7 @@ impl EngineAdapter for MockEngine {
             tools: vec![],
             hidden_text_signals: page.hidden_text_signals.clone(),
             approx_tokens: (serialized.len() / 4) as u32,
+            selected_text: None,
             captured_at: 0,
         })
     }

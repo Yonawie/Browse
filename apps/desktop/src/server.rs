@@ -36,12 +36,29 @@ pub struct TabInfo {
     pub last_active_at: i64,
     #[serde(default)]
     pub pinned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct ShellServerState {
     pub tabs: Arc<Mutex<Vec<TabInfo>>>,
     pub store: Arc<Mutex<MemoryStore>>,
+    pub active_task_id: Arc<Mutex<Option<String>>>,
+    pub focus_mode: Arc<Mutex<bool>>,
+    pub current_selection: Arc<Mutex<Option<String>>>,
+}
+
+impl ShellServerState {
+    pub fn new(tabs: Arc<Mutex<Vec<TabInfo>>>, store: Arc<Mutex<MemoryStore>>) -> Self {
+        Self {
+            tabs,
+            store,
+            active_task_id: Arc::new(Mutex::new(None)),
+            focus_mode: Arc::new(Mutex::new(false)),
+            current_selection: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,12 +119,25 @@ pub async fn dispatch_rpc(
     let method = req.method.as_str();
     match method {
         "tabs.list" => {
+            let focused_only = req.params.get("focused_only").and_then(Value::as_bool).unwrap_or(false);
             let tabs = state.tabs.lock().unwrap().clone();
+            if focused_only {
+                let is_focus = *state.focus_mode.lock().unwrap();
+                let active_task = state.active_task_id.lock().unwrap().clone();
+                if is_focus && active_task.is_some() {
+                    let filtered: Vec<TabInfo> = tabs.into_iter()
+                        .filter(|t| t.pinned || t.task_id == active_task || t.active)
+                        .collect();
+                    return Ok(json!(filtered));
+                }
+            }
             Ok(json!(tabs))
         }
         "tabs.create" | "tabs.new" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("https://example.com");
             let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("User");
+            let task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string)
+                .or_else(|| state.active_task_id.lock().unwrap().clone());
             let group = req.params.get("group")
                 .and_then(Value::as_str)
                 .map(ToString::to_string)
@@ -125,6 +155,7 @@ pub async fn dispatch_rpc(
                 group,
                 last_active_at: now_ms(),
                 pinned: false,
+                task_id,
             };
             tabs.push(new_tab.clone());
             Ok(json!(new_tab))
@@ -321,6 +352,141 @@ pub async fn dispatch_rpc(
                 }
             }
         }
+        "tabs.assign_task" => {
+            let tab_id = req.params.get("tab_id").and_then(Value::as_str);
+            let task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string);
+            if let Some(id) = tab_id {
+                let mut tabs = state.tabs.lock().unwrap();
+                if let Some(t) = tabs.iter_mut().find(|t| t.id == id) {
+                    t.task_id = task_id.clone();
+                }
+            }
+            Ok(json!({ "status": "ok", "task_id": task_id }))
+        }
+        "tabs.prioritize" => {
+            let req_task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string)
+                .or_else(|| state.active_task_id.lock().unwrap().clone());
+            let query_str = req.params.get("query").and_then(Value::as_str).map(ToString::to_string);
+            
+            let task_title = if let Some(ref tid) = req_task_id {
+                let lock = state.store.lock().unwrap();
+                lock.list_tasks().ok().and_then(|ts| ts.into_iter().find(|t| t.id == *tid).map(|t| t.title))
+            } else {
+                None
+            };
+
+            let keywords: Vec<String> = {
+                let mut kws = Vec::new();
+                if let Some(ref t) = task_title {
+                    for w in t.split_whitespace() {
+                        if w.len() > 2 { kws.push(w.to_lowercase()); }
+                    }
+                }
+                if let Some(ref q) = query_str {
+                    for w in q.split_whitespace() {
+                        if w.len() > 2 { kws.push(w.to_lowercase()); }
+                    }
+                }
+                kws
+            };
+
+            let tabs = state.tabs.lock().unwrap().clone();
+            let mut scored = Vec::new();
+            for tab in tabs {
+                let mut score = 0.2f32;
+                let mut relevance = "low";
+                let mut reason = "Background tab".to_string();
+
+                if let (Some(ref req_tid), Some(ref tab_tid)) = (&req_task_id, &tab.task_id) {
+                    if req_tid == tab_tid {
+                        score = 1.0;
+                        relevance = "high";
+                        reason = "Directly linked to active task".to_string();
+                    }
+                }
+
+                if score < 1.0 && !keywords.is_empty() {
+                    let url_lower = tab.url.to_lowercase();
+                    let title_lower = tab.title.to_lowercase();
+                    let group_lower = tab.group.as_deref().unwrap_or("").to_lowercase();
+                    let matches_kw = keywords.iter().any(|k| url_lower.contains(k) || title_lower.contains(k) || group_lower.contains(k));
+                    if matches_kw {
+                        score = 0.7;
+                        relevance = "medium";
+                        reason = "Matches task keywords".to_string();
+                    }
+                }
+
+                if tab.pinned && score < 0.8 {
+                    score = 0.8;
+                    relevance = "medium";
+                    reason = "Pinned tab".to_string();
+                }
+
+                scored.push(json!({
+                    "tab_id": tab.id,
+                    "url": tab.url,
+                    "title": tab.title,
+                    "score": score,
+                    "relevance": relevance,
+                    "reason": reason,
+                }));
+            }
+
+            scored.sort_by(|a, b| {
+                let sa = a["score"].as_f64().unwrap_or(0.0);
+                let sb = b["score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            Ok(json!(scored))
+        }
+        "focus.get" => {
+            let is_active = *state.focus_mode.lock().unwrap();
+            let active_task = state.active_task_id.lock().unwrap().clone();
+            let task_title = if let Some(ref tid) = active_task {
+                let lock = state.store.lock().unwrap();
+                lock.list_tasks().ok().and_then(|ts| ts.into_iter().find(|t| t.id == *tid).map(|t| t.title))
+            } else {
+                None
+            };
+            Ok(json!({
+                "active": is_active,
+                "task_id": active_task,
+                "task_title": task_title,
+                "deferred_notifications": is_active,
+            }))
+        }
+        "focus.toggle" => {
+            let mut mode = state.focus_mode.lock().unwrap();
+            let new_val = req.params.get("enabled").and_then(Value::as_bool).unwrap_or(!*mode);
+            *mode = new_val;
+            if let Some(tid) = req.params.get("task_id").and_then(Value::as_str) {
+                *state.active_task_id.lock().unwrap() = Some(tid.to_string());
+            }
+            let active_task = state.active_task_id.lock().unwrap().clone();
+            let task_title = if let Some(ref tid) = active_task {
+                let lock = state.store.lock().unwrap();
+                lock.list_tasks().ok().and_then(|ts| ts.into_iter().find(|t| t.id == *tid).map(|t| t.title))
+            } else {
+                None
+            };
+            Ok(json!({
+                "active": *mode,
+                "task_id": active_task,
+                "task_title": task_title,
+                "deferred_notifications": *mode,
+            }))
+        }
+        "page.selection.set" => {
+            let text = req.params.get("text").and_then(Value::as_str).map(ToString::to_string);
+            *state.current_selection.lock().unwrap() = text.clone();
+            Ok(json!({ "status": "ok", "selection": text }))
+        }
+        "page.selection.get" => {
+            let sel = state.current_selection.lock().unwrap().clone();
+            Ok(json!({ "selection": sel }))
+        }
         "page.analyze_safety" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
             let text = req.params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -513,6 +679,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             group: Some("General".to_string()),
             last_active_at: now_ms(),
             pinned: false,
+            task_id: None,
         },
         TabInfo {
             id: "tab-2".to_string(),
@@ -523,13 +690,11 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             group: Some("Shopping".to_string()),
             last_active_at: now_ms(),
             pinned: false,
+            task_id: None,
         },
     ];
 
-    let state = ShellServerState {
-        tabs: Arc::new(Mutex::new(default_tabs)),
-        store: store.clone(),
-    };
+    let state = ShellServerState::new(Arc::new(Mutex::new(default_tabs)), store.clone());
 
     let router = create_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -573,18 +738,15 @@ mod tests {
     #[tokio::test]
     async fn router_initializes_with_valid_routes() {
         let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
-        let state = ShellServerState {
-            tabs: Arc::new(Mutex::new(vec![])),
-            store,
-        };
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
         let _router = create_router(state);
     }
 
     #[tokio::test]
     async fn rpc_tabs_list_and_create() {
         let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
-        let state = ShellServerState {
-            tabs: Arc::new(Mutex::new(vec![TabInfo {
+        let state = ShellServerState::new(
+            Arc::new(Mutex::new(vec![TabInfo {
                 id: "tab-1".to_string(),
                 url: "https://example.com".to_string(),
                 title: "Example".to_string(),
@@ -593,9 +755,10 @@ mod tests {
                 group: Some("General".to_string()),
                 last_active_at: now_ms(),
                 pinned: false,
+                task_id: None,
             }])),
             store,
-        };
+        );
 
         // tabs.list
         let req = RpcRequest {
@@ -627,10 +790,7 @@ mod tests {
     #[tokio::test]
     async fn rpc_system_status_and_memory_stats() {
         let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
-        let state = ShellServerState {
-            tabs: Arc::new(Mutex::new(vec![])),
-            store,
-        };
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
 
         let req = RpcRequest {
             jsonrpc: Some("2.0".to_string()),
@@ -655,10 +815,7 @@ mod tests {
     #[tokio::test]
     async fn rpc_safety_analysis_and_tab_groups() {
         let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
-        let state = ShellServerState {
-            tabs: Arc::new(Mutex::new(vec![])),
-            store,
-        };
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
 
         // page.analyze_safety
         let req_safety = RpcRequest {
@@ -752,8 +909,8 @@ mod tests {
             content_hash: "hash-shop-prune",
         }).unwrap();
 
-        let state = ShellServerState {
-            tabs: Arc::new(Mutex::new(vec![
+        let state = ShellServerState::new(
+            Arc::new(Mutex::new(vec![
                 TabInfo {
                     id: "tab-active".to_string(),
                     url: "https://active.example.com".to_string(),
@@ -763,6 +920,7 @@ mod tests {
                     group: Some("Work".to_string()),
                     last_active_at: now,
                     pinned: false,
+                    task_id: None,
                 },
                 TabInfo {
                     id: "tab-stale".to_string(),
@@ -773,6 +931,7 @@ mod tests {
                     group: Some("Shopping".to_string()),
                     last_active_at: four_days_ago,
                     pinned: false,
+                    task_id: None,
                 },
                 TabInfo {
                     id: "tab-pinned".to_string(),
@@ -783,10 +942,11 @@ mod tests {
                     group: None,
                     last_active_at: four_days_ago,
                     pinned: true,
+                    task_id: None,
                 },
             ])),
             store,
-        };
+        );
 
         // 1. Suggest pruning (AT-2)
         let req_prune = RpcRequest {
@@ -825,6 +985,107 @@ mod tests {
         };
         let res_group = dispatch_rpc(state, req_group).await.unwrap();
         assert_eq!(res_group["action"], "grouped");
+    }
+
+    #[tokio::test]
+    async fn rpc_focus_mode_prioritization_and_selection() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let task_id = store.lock().unwrap().create_task("Compile Rust Compiler").unwrap();
+
+        let state = ShellServerState::new(
+            Arc::new(Mutex::new(vec![
+                TabInfo {
+                    id: "tab-rust".to_string(),
+                    url: "https://github.com/rust-lang/rust".to_string(),
+                    title: "rust-lang/rust repository".to_string(),
+                    profile: "User".to_string(),
+                    active: true,
+                    group: Some("Dev".to_string()),
+                    last_active_at: now_ms(),
+                    pinned: false,
+                    task_id: Some(task_id.clone()),
+                },
+                TabInfo {
+                    id: "tab-music".to_string(),
+                    url: "https://youtube.com/watch?v=123".to_string(),
+                    title: "Lofi Beats to Code To".to_string(),
+                    profile: "User".to_string(),
+                    active: false,
+                    group: Some("Media".to_string()),
+                    last_active_at: now_ms(),
+                    pinned: false,
+                    task_id: None,
+                },
+                TabInfo {
+                    id: "tab-pinned".to_string(),
+                    url: "https://docs.rs".to_string(),
+                    title: "Docs.rs".to_string(),
+                    profile: "User".to_string(),
+                    active: false,
+                    group: None,
+                    last_active_at: now_ms(),
+                    pinned: true,
+                    task_id: None,
+                },
+            ])),
+            store,
+        );
+
+        // 1. Focus Mode toggle (AT-4)
+        let req_toggle = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(40)),
+            method: "focus.toggle".to_string(),
+            params: json!({ "enabled": true, "task_id": task_id }),
+        };
+        let res_toggle = dispatch_rpc(state.clone(), req_toggle).await.unwrap();
+        assert_eq!(res_toggle["active"], true);
+        assert_eq!(res_toggle["task_id"], task_id);
+
+        // Focused tabs list
+        let req_list_focus = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(41)),
+            method: "tabs.list".to_string(),
+            params: json!({ "focused_only": true }),
+        };
+        let res_list_focus = dispatch_rpc(state.clone(), req_list_focus).await.unwrap();
+        let focused_tabs = res_list_focus.as_array().unwrap();
+        // Should include tab-rust and tab-pinned, but NOT tab-music
+        assert_eq!(focused_tabs.len(), 2);
+        assert!(focused_tabs.iter().any(|t| t["id"] == "tab-rust"));
+        assert!(focused_tabs.iter().any(|t| t["id"] == "tab-pinned"));
+
+        // 2. Tab prioritization (AT-3)
+        let req_prioritize = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(42)),
+            method: "tabs.prioritize".to_string(),
+            params: json!({ "task_id": task_id }),
+        };
+        let res_prioritize = dispatch_rpc(state.clone(), req_prioritize).await.unwrap();
+        let ranked = res_prioritize.as_array().unwrap();
+        assert_eq!(ranked[0]["tab_id"], "tab-rust");
+        assert_eq!(ranked[0]["relevance"], "high");
+
+        // 3. Page selection capturing (IN-4)
+        let req_sel_set = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(43)),
+            method: "page.selection.set".to_string(),
+            params: json!({ "text": "fn main() { println!(\"hello\"); }" }),
+        };
+        let res_sel_set = dispatch_rpc(state.clone(), req_sel_set).await.unwrap();
+        assert_eq!(res_sel_set["status"], "ok");
+
+        let req_sel_get = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(44)),
+            method: "page.selection.get".to_string(),
+            params: json!({}),
+        };
+        let res_sel_get = dispatch_rpc(state, req_sel_get).await.unwrap();
+        assert_eq!(res_sel_get["selection"], "fn main() { println!(\"hello\"); }");
     }
 }
 

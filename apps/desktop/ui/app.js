@@ -7,6 +7,9 @@ class BrowseShell {
     this.activeTabId = null;
     this.pendingConfirmation = null;
 
+    this.focusMode = false;
+    this.currentSelection = null;
+
     this.initElements();
     this.initEvents();
     this.connectEventStream();
@@ -24,6 +27,14 @@ class BrowseShell {
     this.webFrame = document.getElementById('web-frame');
     this.sidebarPane = document.getElementById('sidebar-pane');
     this.toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
+
+    // Focus Mode (AT-4) & Selection Context (IN-4)
+    this.btnToggleFocus = document.getElementById('btn-toggle-focus');
+    this.selectionBar = document.getElementById('selection-bar');
+    this.selectionPreview = document.getElementById('selection-text-preview');
+    this.btnAskSelection = document.getElementById('btn-ask-selection');
+    this.btnSummarizeSelection = document.getElementById('btn-summarize-selection');
+    this.btnClearSelection = document.getElementById('btn-clear-selection');
 
     // Tab Hygiene (AT-2)
     this.tabPruneBadge = document.getElementById('tab-prune-badge');
@@ -109,6 +120,53 @@ class BrowseShell {
         await this.checkPruneCandidates();
       });
     }
+
+    // Focus Mode (AT-4)
+    if (this.btnToggleFocus) {
+      this.btnToggleFocus.addEventListener('click', () => this.toggleFocusMode());
+    }
+
+    // Selection Context (IN-4)
+    if (this.btnAskSelection) {
+      this.btnAskSelection.addEventListener('click', () => {
+        if (this.currentSelection) {
+          this.sidebarPane.classList.remove('collapsed');
+          const intelTab = document.querySelector('.sidebar-tab[data-tab="intelligence"]');
+          if (intelTab) intelTab.click();
+          this.askInput.value = `Regarding "${this.currentSelection}": `;
+          this.askInput.focus();
+        }
+      });
+    }
+    if (this.btnSummarizeSelection) {
+      this.btnSummarizeSelection.addEventListener('click', () => {
+        if (this.currentSelection) {
+          this.sidebarPane.classList.remove('collapsed');
+          const intelTab = document.querySelector('.sidebar-tab[data-tab="intelligence"]');
+          if (intelTab) intelTab.click();
+          this.triggerPageAction('ask', `Summarize this specific text: "${this.currentSelection}"`);
+        }
+      });
+    }
+    if (this.btnClearSelection) {
+      this.btnClearSelection.addEventListener('click', () => {
+        this.clearSelection();
+      });
+    }
+
+    // Listen for text selection changes
+    document.addEventListener('selectionchange', () => {
+      const sel = window.getSelection().toString().trim();
+      if (sel && sel.length > 3) {
+        this.setSelection(sel);
+      }
+    });
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'page_selection') {
+        this.setSelection(e.data.text);
+      }
+    });
+
 
     // First-run onboarding wizard
     const onboardingModal = document.getElementById('onboarding-modal');
@@ -318,11 +376,42 @@ class BrowseShell {
   }
 
   async fetchTabs() {
-    const tabs = await this.rpc('tabs.list') || [
+    const tabs = await this.rpc('tabs.list', { focused_only: this.focusMode }) || [
       { id: 'tab-1', url: 'https://example.com', title: 'Example Domain', profile: 'User', active: true }
     ];
     this.tabs = tabs;
     this.renderTabs();
+  }
+
+  async toggleFocusMode() {
+    const res = await this.rpc('focus.toggle', {});
+    if (res) {
+      this.focusMode = res.focus_mode;
+      if (this.btnToggleFocus) {
+        this.btnToggleFocus.classList.toggle('active', this.focusMode);
+      }
+      this.showToast(this.focusMode ? '🎯 Focus Mode ON: Filtering tabs for active task' : '🎯 Focus Mode OFF: All tabs visible');
+      await this.fetchTabs();
+    }
+  }
+
+  setSelection(text) {
+    if (!text) return;
+    this.currentSelection = text;
+    if (this.selectionBar && this.selectionPreview) {
+      const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
+      this.selectionPreview.textContent = preview;
+      this.selectionBar.classList.remove('hidden');
+    }
+    this.rpc('page.selection.set', { text });
+  }
+
+  clearSelection() {
+    this.currentSelection = null;
+    if (this.selectionBar) {
+      this.selectionBar.classList.add('hidden');
+    }
+    this.rpc('page.selection.set', { text: null });
   }
 
   renderTabs() {
@@ -333,9 +422,11 @@ class BrowseShell {
       
       const badge = tab.profile === 'Agent' ? '<span class="tab-badge">Agent</span>' : '';
       const groupBadge = tab.group ? `<span class="tab-group-tag">${this.escapeHtml(tab.group)}</span>` : '';
+      const taskBadge = tab.task_id ? `<span class="tab-task-tag">🎯 ${this.escapeHtml(tab.task_id)}</span>` : '';
       el.innerHTML = `
         ${badge}
         ${groupBadge}
+        ${taskBadge}
         <span class="tab-title">${this.escapeHtml(tab.title || tab.url)}</span>
         <button class="tab-close" title="Close Tab">×</button>
       `;

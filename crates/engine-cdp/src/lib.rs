@@ -525,6 +525,14 @@ impl EngineAdapter for CdpEngine {
         obs.page.origin = Origin::parse(&obs.page.url).map_err(|e| EngineError::Backend(e.to_string()))?;
         obs.page.untrusted = true;
 
+        if obs.selected_text.is_none() {
+            if let Ok(sel_val) = self.eval_sensor(&session, "window.getSelection ? window.getSelection().toString() : ''", false).await {
+                if let Some(s) = sel_val["value"].as_str().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+                    obs.selected_text = Some(s);
+                }
+            }
+        }
+
         // Session detection via the cookie jar, not page heuristics alone.
         let has_cookies = {
             let ctx = self.webviews.lock().unwrap().get(webview).and_then(|w| w.context_id.clone());

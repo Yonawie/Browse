@@ -164,6 +164,9 @@ pub struct Observation {
     /// Rough token estimate of the serialized observation.
     #[serde(default)]
     pub approx_tokens: u32,
+    /// Active user selection on the page (IN-4), if any text or snippet is highlighted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_text: Option<String>,
     pub captured_at: crate::UnixMs,
 }
 
