@@ -7,12 +7,14 @@ pub mod entity;
 pub mod observation;
 pub mod origin;
 pub mod scope;
+pub mod skill;
 pub mod tool;
 
 pub use entity::*;
 pub use observation::*;
 pub use origin::*;
 pub use scope::*;
+pub use skill::*;
 pub use tool::*;
 
 use serde::{Deserialize, Serialize};

@@ -237,6 +237,35 @@ pub async fn dispatch_rpc(
                 .collect();
             Ok(json!(entities_json))
         }
+        "skills.list" => {
+            let skills = core_types::builtin_skills();
+            Ok(json!(skills))
+        }
+        "skills.render" => {
+            let skill_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let params_map: std::collections::HashMap<String, String> = req
+                .params
+                .get("parameters")
+                .and_then(Value::as_object)
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let skills = core_types::builtin_skills();
+            if let Some(skill) = skills.into_iter().find(|s| s.id == skill_id) {
+                let prompt = skill.render_prompt(&params_map);
+                Ok(json!({
+                    "id": skill.id,
+                    "prompt": prompt,
+                    "scope": skill.scope
+                }))
+            } else {
+                Err(json!({ "code": -32602, "message": format!("Skill not found: {skill_id}") }))
+            }
+        }
         "system.status" => {
             Ok(json!({
                 "engine": "cdp-chromium",
@@ -485,8 +514,30 @@ mod tests {
             method: "memory.entities".to_string(),
             params: json!({ "limit": 10 }),
         };
-        let res_entities = dispatch_rpc(state, req_entities).await.unwrap();
+        let res_entities = dispatch_rpc(state.clone(), req_entities).await.unwrap();
         assert!(res_entities.is_array());
+
+        // skills.list & skills.render
+        let req_skills = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(24)),
+            method: "skills.list".to_string(),
+            params: json!({}),
+        };
+        let res_skills = dispatch_rpc(state.clone(), req_skills).await.unwrap();
+        assert!(res_skills.as_array().unwrap().len() >= 3);
+
+        let req_render = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(25)),
+            method: "skills.render".to_string(),
+            params: json!({
+                "id": "github_issue_checker",
+                "parameters": { "repo": "Yonawie/Browse" }
+            }),
+        };
+        let res_render = dispatch_rpc(state, req_render).await.unwrap();
+        assert!(res_render["prompt"].as_str().unwrap().contains("https://github.com/Yonawie/Browse/issues"));
     }
 }
 

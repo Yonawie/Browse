@@ -213,7 +213,7 @@ e2e!(agent_profile_is_isolated_and_session_import_is_scoped, |h| {
         )
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
     h.engine.navigate(&user, &h.fx.url("login", "/account")).await.unwrap();
     let obs = h.engine.observe(&user).await.unwrap();
     assert!(obs.page.title.contains("Your account"), "user should be signed in: {}", obs.page.title);

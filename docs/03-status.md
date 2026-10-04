@@ -23,10 +23,11 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | S9 Полировка: хоткеи, темы, настройки ИИ, онбординг | готово | см. git log | хоткеи (Ctrl+T/W/L/B/1..9), темы, мастер онбординга |
 | MCP Extensibility: Model Context Protocol Server (ADR-008) для Claude Desktop / Cursor | готово | `4a1d4db` | 19 unit (agent-runtime) + 20 (desktop) + stdio JSON-RPC |
 | Knowledge Graph: сущности, меншены, ко-оккурентные связи и IPC | готово | `29f2bf7` | 21 unit (page-intelligence) + 12 (memory) + RPC `memory.entities` |
-| Plugin Host & Sandboxing: пользовательские инструменты агента (ADR-008) | готово | см. git log | 30 unit (agent-runtime: 20 unit + 10 redteam) |
+| Plugin Host & Sandboxing: пользовательские инструменты агента (ADR-008) | готово | `7cfd88d` | 30 unit (agent-runtime: 20 unit + 10 redteam) |
+| Skills & Automation Scenarios: библиотечные навыки и шаблоны (ADR-008) | готово | см. git log | 7 unit (core-types) + RPC `skills.list`, `skills.render` |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **147 тестов, 0 падений**
-(agent-runtime 30 [20 unit + 10 redteam benchmark], core-types 6, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 12,
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **148 тестов, 0 падений**
+(agent-runtime 30 [20 unit + 10 redteam benchmark], core-types 7, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 12,
 model-gateway 34 + 3 live, page-intelligence 21, policy 14, desktop 20); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
