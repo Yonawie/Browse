@@ -45,6 +45,16 @@ pub struct PruneCandidate {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredPageVersion {
+    pub id: String,
+    pub page_id: String,
+    pub content_hash: String,
+    pub title: Option<String>,
+    pub main_text: Option<String>,
+    pub captured_at: i64,
+}
+
 pub struct MemoryStore {
     conn: Connection,
     /// Embedding dimensionality enforced on insert (256 by default, ADR-003).
@@ -180,6 +190,64 @@ impl MemoryStore {
             params![id, page_id],
         )?;
         Ok(id)
+    }
+
+    /// Get the most recently captured version of a page by URL.
+    pub fn get_latest_version_for_url(&self, url: &str) -> Result<Option<StoredPageVersion>> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT pv.id, pv.page_id, pv.content_hash, pv.title, pv.main_text_zst, pv.captured_at
+                 FROM page_versions pv
+                 JOIN pages p ON p.id = pv.page_id
+                 WHERE p.url = ?1
+                 ORDER BY pv.captured_at DESC
+                 LIMIT 1",
+                params![url],
+                |r| {
+                    let text_blob: Option<Vec<u8>> = r.get(4)?;
+                    let main_text = text_blob.map(|b| String::from_utf8_lossy(&b).to_string());
+                    Ok(StoredPageVersion {
+                        id: r.get(0)?,
+                        page_id: r.get(1)?,
+                        content_hash: r.get(2)?,
+                        title: r.get(3)?,
+                        main_text,
+                        captured_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Get the previous (older) version of a page by URL.
+    pub fn get_previous_version_for_url(&self, url: &str) -> Result<Option<StoredPageVersion>> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT pv.id, pv.page_id, pv.content_hash, pv.title, pv.main_text_zst, pv.captured_at
+                 FROM page_versions pv
+                 JOIN pages p ON p.id = pv.page_id
+                 WHERE p.url = ?1
+                 ORDER BY pv.captured_at DESC
+                 LIMIT 1 OFFSET 1",
+                params![url],
+                |r| {
+                    let text_blob: Option<Vec<u8>> = r.get(4)?;
+                    let main_text = text_blob.map(|b| String::from_utf8_lossy(&b).to_string());
+                    Ok(StoredPageVersion {
+                        id: r.get(0)?,
+                        page_id: r.get(1)?,
+                        content_hash: r.get(2)?,
+                        title: r.get(3)?,
+                        main_text,
+                        captured_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
     }
 
     pub fn insert_chunks(&self, page_version_id: &str, chunks: &[NewChunk<'_>]) -> Result<Vec<String>> {
@@ -835,4 +903,50 @@ mod tests {
         let cand_unindexed = candidates.iter().find(|c| c.tab_id == "tab-stale-unindexed").unwrap();
         assert!(!cand_unindexed.is_indexed);
     }
+
+    #[test]
+    fn page_version_history_and_retrieval() {
+        let s = store();
+        let url = "https://example.com/pricing";
+
+        // Version 1
+        let v1 = NewPageVersion {
+            url,
+            title: Some("Pricing v1"),
+            lang: Some("en"),
+            page_kind: PageKind::Product,
+            sensitivity: Sensitivity::Public,
+            main_text: Some("Pro plan: $99/mo"),
+            content_hash: "hash-v1",
+        };
+        s.insert_page_version(&v1).unwrap();
+
+        let latest = s.get_latest_version_for_url(url).unwrap().expect("latest version present");
+        assert_eq!(latest.content_hash, "hash-v1");
+        assert_eq!(latest.main_text.as_deref(), Some("Pro plan: $99/mo"));
+
+        let prev = s.get_previous_version_for_url(url).unwrap();
+        assert!(prev.is_none());
+
+        // Version 2 (captured later)
+        let v2 = NewPageVersion {
+            url,
+            title: Some("Pricing v2"),
+            lang: Some("en"),
+            page_kind: PageKind::Product,
+            sensitivity: Sensitivity::Public,
+            main_text: Some("Pro plan: $79/mo"),
+            content_hash: "hash-v2",
+        };
+        s.insert_page_version(&v2).unwrap();
+
+        let latest2 = s.get_latest_version_for_url(url).unwrap().expect("latest version present");
+        assert_eq!(latest2.content_hash, "hash-v2");
+        assert_eq!(latest2.main_text.as_deref(), Some("Pro plan: $79/mo"));
+
+        let prev2 = s.get_previous_version_for_url(url).unwrap().expect("previous version present");
+        assert_eq!(prev2.content_hash, "hash-v1");
+        assert_eq!(prev2.main_text.as_deref(), Some("Pro plan: $99/mo"));
+    }
 }
+

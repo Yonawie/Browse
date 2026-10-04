@@ -52,6 +52,7 @@ class BrowseShell {
     // Intelligence
     this.chipSummarize = document.getElementById('chip-summarize');
     this.chipKeyfacts = document.getElementById('chip-keypoints');
+    this.chipDiff = document.getElementById('chip-diff');
     this.chipTranslate = document.getElementById('chip-translate');
     this.intelligenceOutput = document.getElementById('intelligence-output');
     this.askInput = document.getElementById('ask-input');
@@ -298,6 +299,7 @@ class BrowseShell {
     // Page Intelligence triggers
     this.chipSummarize.addEventListener('click', () => this.triggerPageAction('summarize'));
     this.chipKeyfacts.addEventListener('click', () => this.triggerPageAction('ask', 'Extract key facts and main takeaways'));
+    if (this.chipDiff) this.chipDiff.addEventListener('click', () => this.triggerPageDiff());
     this.chipTranslate.addEventListener('click', () => this.triggerPageAction('translate', 'Russian'));
     this.btnSendAsk.addEventListener('click', () => {
       const q = this.askInput.value.trim();
@@ -666,6 +668,52 @@ class BrowseShell {
         <div class="chat-message bot">
           <div>${formatted}</div>
           ${citationsHtml}
+        </div>
+      `;
+      this.intelligenceOutput.scrollTop = this.intelligenceOutput.scrollHeight;
+    }
+  }
+
+  async triggerPageDiff() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (!activeTab) return;
+
+    this.intelligenceOutput.innerHTML += `
+      <div class="chat-message user"><strong>You:</strong> What changed on this page since my last visit?</div>
+      <div class="chat-message bot"><em>Analyzing historical snapshots from memory...</em></div>
+    `;
+    this.intelligenceOutput.scrollTop = this.intelligenceOutput.scrollHeight;
+
+    const res = await this.rpc('page.diff', { url: activeTab.url });
+
+    // Remove thinking message
+    const msgs = this.intelligenceOutput.querySelectorAll('.chat-message.bot');
+    if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+    if (res) {
+      let diffHtml = '';
+      if (!res.has_changes) {
+        diffHtml = `<div style="color:var(--success);padding:4px 0;">✔ No changes detected on this page since your previous visit.</div>`;
+      } else {
+        diffHtml = `<div style="margin-bottom:6px;"><strong>⚡ Page Diff Summary:</strong> ${this.escapeHtml(res.summary)}</div>`;
+        if (res.items && res.items.length > 0) {
+          diffHtml += '<div class="diff-items-container" style="display:flex;flex-direction:column;gap:6px;font-size:12px;">';
+          res.items.forEach(item => {
+            if (item.kind === 'Modified') {
+              diffHtml += `<div style="border-left:3px solid var(--warning);padding-left:8px;"><span style="color:var(--warning);font-weight:600;">Modified:</span> <del style="opacity:0.6">${this.escapeHtml(item.old_text)}</del> &rarr; <ins style="color:var(--text-main);background:rgba(234,179,8,0.1);">${this.escapeHtml(item.new_text)}</ins></div>`;
+            } else if (item.kind === 'Added') {
+              diffHtml += `<div style="border-left:3px solid var(--success);padding-left:8px;"><span style="color:var(--success);font-weight:600;">Added:</span> <ins style="color:var(--text-main);background:rgba(34,197,94,0.1);">${this.escapeHtml(item.new_text)}</ins></div>`;
+            } else if (item.kind === 'Removed') {
+              diffHtml += `<div style="border-left:3px solid var(--danger);padding-left:8px;"><span style="color:var(--danger);font-weight:600;">Removed:</span> <del style="opacity:0.7">${this.escapeHtml(item.old_text)}</del></div>`;
+            }
+          });
+          diffHtml += '</div>';
+        }
+      }
+
+      this.intelligenceOutput.innerHTML += `
+        <div class="chat-message bot">
+          ${diffHtml}
         </div>
       `;
       this.intelligenceOutput.scrollTop = this.intelligenceOutput.scrollHeight;

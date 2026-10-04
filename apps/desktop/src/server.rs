@@ -13,7 +13,7 @@ use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
 use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters};
-use page_intelligence::{detect_dark_patterns, inspect_url_phishing};
+use page_intelligence::{compute_page_diff, detect_dark_patterns, inspect_url_phishing};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -496,6 +496,34 @@ pub async fn dispatch_rpc(
                 "phishing": phishing,
                 "dark_patterns": dark_patterns,
             }))
+        }
+        "page.diff" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let current_text = req.params.get("current_text").and_then(Value::as_str);
+
+            let lock = state.store.lock().unwrap();
+            let latest = lock.get_latest_version_for_url(url).unwrap_or(None);
+
+            let report = match (current_text, latest) {
+                (Some(live_text), Some(stored)) => {
+                    // Compare live text against stored version
+                    compute_page_diff(stored.main_text.as_deref(), live_text)
+                }
+                (Some(live_text), None) => {
+                    // First time seeing this page
+                    compute_page_diff(None, live_text)
+                }
+                (None, Some(latest_ver)) => {
+                    // Compare latest recorded against the one before it
+                    let prev = lock.get_previous_version_for_url(url).unwrap_or(None);
+                    let latest_text = latest_ver.main_text.as_deref().unwrap_or("");
+                    compute_page_diff(prev.as_ref().and_then(|p| p.main_text.as_deref()), latest_text)
+                }
+                (None, None) => {
+                    compute_page_diff(None, "")
+                }
+            };
+            Ok(json!(report))
         }
         "tabs.groups.list" => {
             let lock = state.store.lock().unwrap();
@@ -1086,6 +1114,62 @@ mod tests {
         };
         let res_sel_get = dispatch_rpc(state, req_sel_get).await.unwrap();
         assert_eq!(res_sel_get["selection"], "fn main() { println!(\"hello\"); }");
+    }
+
+    #[tokio::test]
+    async fn rpc_page_diff_detection() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let url = "https://news.ycombinator.com/item?id=123";
+
+        // Store first version
+        {
+            let lock = store.lock().unwrap();
+            let v1 = memory::NewPageVersion {
+                url,
+                title: Some("Launch Post"),
+                lang: Some("en"),
+                page_kind: core_types::PageKind::Article,
+                sensitivity: Sensitivity::Public,
+                main_text: Some("Initial release of the software.\nDownload at link below."),
+                content_hash: "hash-item-v1",
+            };
+            lock.insert_page_version(&v1).unwrap();
+        }
+
+        let state = ShellServerState::new(
+            Arc::new(Mutex::new(vec![])),
+            store,
+        );
+
+        // 1. Compare identical text
+        let req_diff_same = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(50)),
+            method: "page.diff".to_string(),
+            params: json!({
+                "url": url,
+                "current_text": "Initial release of the software.\nDownload at link below."
+            }),
+        };
+        let res_diff_same = dispatch_rpc(state.clone(), req_diff_same).await.unwrap();
+        assert_eq!(res_diff_same["has_changes"], false);
+
+        // 2. Compare changed text (new section added)
+        let req_diff_changed = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(51)),
+            method: "page.diff".to_string(),
+            params: json!({
+                "url": url,
+                "current_text": "Initial release of the software.\nDownload at link below.\nUPDATE: Version 1.1 is now out!"
+            }),
+        };
+        let res_diff_changed = dispatch_rpc(state, req_diff_changed).await.unwrap();
+        assert_eq!(res_diff_changed["has_changes"], true);
+        assert_eq!(res_diff_changed["added_count"], 1);
+        let items = res_diff_changed["items"].as_array().unwrap();
+        assert_eq!(items[0]["kind"], "Added");
+        assert!(items[0]["new_text"].as_str().unwrap().contains("UPDATE: Version 1.1"));
     }
 }
 

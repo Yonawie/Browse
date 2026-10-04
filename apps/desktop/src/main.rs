@@ -56,7 +56,7 @@ async fn main() {
         Some("skill") => skill_cmd::skill_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang>> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>] | skill <list | render <id> [param=val ...]>>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <q> | translate <lang> | diff> | memory <stats | index <url> | search <query> | forget <d>> | run <url> <task> [--dry-run] [--interactive]> | shell [--port <p>] [--headless] | inspect-safety <url> [--text <t>] | mcp [--dev-mode] [--auth-token <t>] [--origin <o>] | skill <list | render <id> [param=val ...]>>"
             );
             Ok(())
         }
