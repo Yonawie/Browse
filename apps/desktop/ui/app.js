@@ -54,6 +54,8 @@ class BrowseShell {
     this.btnMemorySearch = document.getElementById('btn-memory-search');
     this.memoryStats = document.getElementById('memory-stats-badge');
     this.memoryResults = document.getElementById('memory-results');
+    this.kgTags = document.getElementById('knowledge-graph-tags');
+    this.btnRefreshKg = document.getElementById('btn-refresh-kg');
   }
 
   initEvents() {
@@ -191,6 +193,9 @@ class BrowseShell {
     this.memoryInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.searchMemory();
     });
+    if (this.btnRefreshKg) {
+      this.btnRefreshKg.addEventListener('click', () => this.loadKnowledgeGraph());
+    }
   }
 
   async rpc(method, params = {}) {
@@ -512,6 +517,34 @@ class BrowseShell {
     if (stats) {
       this.memoryStats.textContent = `Memory: ${stats.pages || 0} pages, ${stats.chunks || 0} chunks indexed.`;
     }
+    this.loadKnowledgeGraph();
+  }
+
+  async loadKnowledgeGraph() {
+    if (!this.kgTags) return;
+    const entities = await this.rpc('memory.entities', { limit: 15 }) || [];
+    if (entities.length === 0) {
+      this.kgTags.innerHTML = '<span class="empty-hint" style="font-size:0.8rem;color:var(--text-dim);">No entities indexed yet. Browse documentation or repositories to build the graph.</span>';
+      return;
+    }
+    this.kgTags.innerHTML = entities.map(e => `
+      <span class="entity-tag" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;font-size:0.75rem;background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-primary);cursor:pointer;" title="Type: ${this.escapeHtml(e.kind)} (${e.mentions} mentions)">
+        <span style="opacity:0.6">${e.kind === 'repo' ? '📦' : e.kind === 'topic' ? '🏷️' : '✦'}</span>
+        <strong>${this.escapeHtml(e.name)}</strong>
+        <small style="opacity:0.5">${e.mentions}</small>
+      </span>
+    `).join('');
+
+    // Clicking an entity tag searches memory
+    this.kgTags.querySelectorAll('.entity-tag').forEach(tag => {
+      tag.addEventListener('click', () => {
+        const strong = tag.querySelector('strong');
+        if (strong) {
+          this.memoryInput.value = strong.textContent;
+          this.searchMemory();
+        }
+      });
+    });
   }
 
   async searchMemory() {

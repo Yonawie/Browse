@@ -168,6 +168,17 @@
             Loading memory stats...
           </div>
 
+          <!-- Knowledge Graph Insights -->
+          <div class="knowledge-graph-section" style="margin-top:12px;padding:12px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <h4 style="margin:0;font-size:0.85rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">🕸️ Knowledge Graph & Entities</h4>
+              <button class="btn-icon" id="btn-refresh-kg" title="Refresh Graph" style="font-size:0.8rem;padding:2px 6px;">⟳</button>
+            </div>
+            <div id="knowledge-graph-tags" style="display:flex;flex-wrap:wrap;gap:6px;">
+              <span class="empty-hint" style="font-size:0.8rem;color:var(--text-dim);">No entities indexed yet. Browse documentation or repositories to build the graph.</span>
+            </div>
+          </div>
+
           <div class="memory-results" id="memory-results">
             <!-- Results will appear here -->
           </div>
