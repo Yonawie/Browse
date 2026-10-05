@@ -125,6 +125,30 @@ async fn handle_events() -> Sse<impl Stream<Item = Result<Event, std::convert::I
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
+pub fn canonicalize_url(url: &str) -> String {
+    let mut u = url.trim();
+    if let Some(pos) = u.find('#') {
+        u = &u[..pos];
+    }
+    if let Some(q_pos) = u.find('?') {
+        let base = &u[..q_pos];
+        let query = &u[q_pos + 1..];
+        let filtered_query: Vec<&str> = query.split('&')
+            .filter(|p| {
+                let k = p.split('=').next().unwrap_or("").to_lowercase();
+                !k.starts_with("utm_") && k != "fbclid" && k != "gclid" && k != "ref"
+            })
+            .collect();
+        if filtered_query.is_empty() {
+            base.trim_end_matches('/').to_lowercase()
+        } else {
+            format!("{}?{}", base.trim_end_matches('/').to_lowercase(), filtered_query.join("&"))
+        }
+    } else {
+        u.trim_end_matches('/').to_lowercase()
+    }
+}
+
 pub async fn dispatch_rpc(
     state: ShellServerState,
     req: RpcRequest,
@@ -411,6 +435,42 @@ pub async fn dispatch_rpc(
                 found = true;
             }
             Ok(json!({ "id": tab_id, "found": found, "muted": muted_state }))
+        }
+        "tabs.dedup" => {
+            let mut tabs = state.tabs.lock().unwrap();
+            let before_len = tabs.len();
+            let mut seen_canonical = std::collections::HashSet::new();
+            let mut closed_ids = Vec::new();
+
+            for t in tabs.iter() {
+                if t.active || t.pinned {
+                    seen_canonical.insert(canonicalize_url(&t.url));
+                }
+            }
+
+            tabs.retain(|t| {
+                if t.active || t.pinned {
+                    return true;
+                }
+                let canon = canonicalize_url(&t.url);
+                if seen_canonical.contains(&canon) {
+                    closed_ids.push(t.id.clone());
+                    false
+                } else {
+                    seen_canonical.insert(canon);
+                    true
+                }
+            });
+
+            if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                tabs[0].active = true;
+            }
+            let closed_count = before_len - tabs.len();
+            Ok(json!({
+                "closed_count": closed_count,
+                "closed_ids": closed_ids,
+                "remaining_count": tabs.len()
+            }))
         }
         "tabs.prioritize" => {
             let req_task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string)
@@ -743,6 +803,71 @@ pub async fn dispatch_rpc(
             } else {
                 Ok(json!({ "has_session": false, "tabs": [] }))
             }
+        }
+        "prompts.list" => {
+            let lock = state.store.lock().unwrap();
+            let templates = lock.list_prompt_templates().unwrap_or_default();
+            Ok(json!(templates))
+        }
+        "prompts.save" => {
+            let id = req.params.get("id").and_then(Value::as_str);
+            let name = req.params.get("name").and_then(Value::as_str).unwrap_or("Custom Prompt");
+            let icon = req.params.get("icon").and_then(Value::as_str).unwrap_or("✦");
+            let tmpl = req.params.get("prompt_template").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let rec = lock.save_prompt_template(id, name, icon, tmpl)
+                .map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(rec))
+        }
+        "prompts.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_prompt_template(id).unwrap_or(false);
+            Ok(json!({ "id": id, "deleted": deleted }))
+        }
+        "userscripts.list" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_user_scripts(profile).unwrap_or_default();
+            Ok(json!(list))
+        }
+        "userscripts.save" => {
+            let id = req.params.get("id").and_then(Value::as_str);
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let name = req.params.get("name").and_then(Value::as_str).unwrap_or("User Script");
+            let domain_pattern = req.params.get("domain_pattern").and_then(Value::as_str).unwrap_or("*");
+            let script_type = req.params.get("script_type").and_then(Value::as_str).unwrap_or("js");
+            let content = req.params.get("content").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let rec = lock.save_user_script(id, profile, name, domain_pattern, script_type, content)
+                .map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(rec))
+        }
+        "userscripts.toggle" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let enabled = req.params.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+            let lock = state.store.lock().unwrap();
+            let toggled = lock.toggle_user_script(id, enabled).unwrap_or(false);
+            Ok(json!({ "id": id, "enabled": enabled, "toggled": toggled }))
+        }
+        "userscripts.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_user_script(id).unwrap_or(false);
+            Ok(json!({ "id": id, "deleted": deleted }))
+        }
+        "userscripts.for_url" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let domain = if let Some(pos) = url.find("://") {
+                let rest = &url[pos + 3..];
+                rest.split(&['/', '?', '#', ':'][..]).next().unwrap_or(url)
+            } else {
+                url
+            };
+            let lock = state.store.lock().unwrap();
+            let scripts = lock.get_scripts_for_domain(profile, domain).unwrap_or_default();
+            Ok(json!(scripts))
         }
         "devtools.explain" => {
             if let Some(console_val) = req.params.get("console") {
@@ -1169,6 +1294,9 @@ pub async fn dispatch_rpc(
                 ("zoom in", "Zoom In (Ctrl+Plus)", "Enlarge page display", "action:zoom_in"),
                 ("zoom out", "Zoom Out (Ctrl+Minus)", "Reduce page display", "action:zoom_out"),
                 ("zoom reset", "Reset Zoom (Ctrl+0)", "Reset page display to 100%", "action:zoom_reset"),
+                ("dedup", "Deduplicate Tabs", "Close duplicate tabs with same destination", "action:dedup_tabs"),
+                ("scripts", "User Scripts & Styles", "Manage custom JavaScript and CSS user styles", "action:userscripts"),
+                ("templates", "Prompt Templates", "Manage custom AI quick action prompt templates", "action:prompts"),
             ];
             for (kw, title, subtitle, act) in actions {
                 if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
@@ -2466,8 +2594,101 @@ mod tests {
             method: "sessions.delete".to_string(),
             params: json!({ "id": "test-session-1" }),
         };
-        let res_sess_del = dispatch_rpc(state, req_sess_del).await.unwrap();
+        let res_sess_del = dispatch_rpc(state.clone(), req_sess_del).await.unwrap();
         assert_eq!(res_sess_del["deleted"], true);
+
+        // 22. Tab Deduplication (tabs.dedup)
+        let req_tab_dup = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(137)),
+            method: "tabs.create".to_string(),
+            params: json!({ "url": "https://example.com/sleepy?utm_source=twitter&utm_medium=cpc" }),
+        };
+        let _ = dispatch_rpc(state.clone(), req_tab_dup).await.unwrap();
+
+        let req_dedup = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(138)),
+            method: "tabs.dedup".to_string(),
+            params: json!({}),
+        };
+        let res_dedup = dispatch_rpc(state.clone(), req_dedup).await.unwrap();
+        assert!(res_dedup["closed_count"].as_u64().unwrap() >= 1);
+
+        // 23. Prompt Templates
+        let req_prompts_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(139)),
+            method: "prompts.list".to_string(),
+            params: json!({}),
+        };
+        let res_prompts_list = dispatch_rpc(state.clone(), req_prompts_list).await.unwrap();
+        assert!(res_prompts_list.as_array().unwrap().len() >= 4);
+
+        let req_prompt_save = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(140)),
+            method: "prompts.save".to_string(),
+            params: json!({
+                "name": "Analyze Citations",
+                "icon": "🔬",
+                "prompt_template": "Verify all claims on this page."
+            }),
+        };
+        let res_prompt_save = dispatch_rpc(state.clone(), req_prompt_save).await.unwrap();
+        let prompt_id = res_prompt_save["id"].as_str().unwrap();
+
+        let req_prompt_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(141)),
+            method: "prompts.delete".to_string(),
+            params: json!({ "id": prompt_id }),
+        };
+        let res_prompt_del = dispatch_rpc(state.clone(), req_prompt_del).await.unwrap();
+        assert_eq!(res_prompt_del["deleted"], true);
+
+        // 24. User Scripts & Custom Styles
+        let req_script_save = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(142)),
+            method: "userscripts.save".to_string(),
+            params: json!({
+                "profile": "user",
+                "name": "Custom CSS Inversion",
+                "domain_pattern": "example.com",
+                "script_type": "css",
+                "content": "body { filter: invert(1); }"
+            }),
+        };
+        let res_script_save = dispatch_rpc(state.clone(), req_script_save).await.unwrap();
+        let script_id = res_script_save["id"].as_str().unwrap();
+
+        let req_script_for_url = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(143)),
+            method: "userscripts.for_url".to_string(),
+            params: json!({ "url": "https://example.com/some/path", "profile": "user" }),
+        };
+        let res_script_for_url = dispatch_rpc(state.clone(), req_script_for_url).await.unwrap();
+        assert_eq!(res_script_for_url.as_array().unwrap().len(), 1);
+
+        let req_script_toggle = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(144)),
+            method: "userscripts.toggle".to_string(),
+            params: json!({ "id": script_id, "enabled": false }),
+        };
+        let res_script_toggle = dispatch_rpc(state.clone(), req_script_toggle).await.unwrap();
+        assert_eq!(res_script_toggle["toggled"], true);
+
+        let req_script_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(145)),
+            method: "userscripts.delete".to_string(),
+            params: json!({ "id": script_id }),
+        };
+        let res_script_del = dispatch_rpc(state, req_script_del).await.unwrap();
+        assert_eq!(res_script_del["deleted"], true);
     }
 }
 

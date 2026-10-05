@@ -25,6 +25,7 @@ class BrowseShell {
     this.checkPruneCandidates();
     this.updateProfileIndicator();
     this.checkCrashRecovery();
+    this.fetchPromptTemplates();
   }
 
   initElements() {
@@ -210,6 +211,20 @@ class BrowseShell {
     this.savedSessionsList = document.getElementById('saved-sessions-list');
     this.crashRecoveryAlert = document.getElementById('crash-recovery-alert');
     this.btnRestoreCrashTabs = document.getElementById('btn-restore-crash-tabs');
+
+    // Prompt Templates & Tab Dedup
+    this.promptTemplatesBar = document.getElementById('prompt-templates-bar');
+    this.btnDedupPrune = document.getElementById('btn-dedup-prune');
+
+    // User Scripts & Custom Styles
+    this.userscriptsModal = document.getElementById('userscripts-modal');
+    this.newScriptName = document.getElementById('new-script-name');
+    this.newScriptDomain = document.getElementById('new-script-domain');
+    this.newScriptType = document.getElementById('new-script-type');
+    this.newScriptContent = document.getElementById('new-script-content');
+    this.btnSaveUserscript = document.getElementById('btn-save-userscript');
+    this.btnDismissUserscripts = document.getElementById('btn-dismiss-userscripts');
+    this.userscriptsList = document.getElementById('userscripts-list');
   }
 
   initEvents() {
@@ -480,6 +495,16 @@ class BrowseShell {
       this.btnRestoreCrashTabs.addEventListener('click', () => this.restoreCrashSession());
     }
 
+    if (this.btnDedupPrune) {
+      this.btnDedupPrune.addEventListener('click', () => this.dedupTabs());
+    }
+    if (this.btnDismissUserscripts) {
+      this.btnDismissUserscripts.addEventListener('click', () => this.closeUserScriptsModal());
+    }
+    if (this.btnSaveUserscript) {
+      this.btnSaveUserscript.addEventListener('click', () => this.saveUserScript());
+    }
+
     // Zoom badge click
     if (this.zoomLevelBadge) {
       this.zoomLevelBadge.addEventListener('click', () => this.resetZoom());
@@ -543,6 +568,8 @@ class BrowseShell {
           this.closeCommandPalette();
         } else if (this.sessionsModal && !this.sessionsModal.classList.contains('hidden')) {
           this.closeSessionsModal();
+        } else if (this.userscriptsModal && !this.userscriptsModal.classList.contains('hidden')) {
+          this.closeUserScriptsModal();
         } else if (this.profileModal && !this.profileModal.classList.contains('hidden')) {
           this.closeProfileModal();
         } else if (this.securityModal && !this.securityModal.classList.contains('hidden')) {
@@ -939,6 +966,7 @@ class BrowseShell {
       this.renderTabs();
       this.webFrame.src = url;
       this.analyzeSafety(url);
+      this.applyUserScriptsForUrl(url);
       this.rpc('tabs.navigate', { tab_id: activeTab.id, url });
       this.recordedActions.push({ tool: 'navigate', url });
     }
@@ -2048,6 +2076,15 @@ class BrowseShell {
         case 'action:zoom_reset':
           this.resetZoom();
           break;
+        case 'action:dedup_tabs':
+          this.dedupTabs();
+          break;
+        case 'action:userscripts':
+          this.openUserScriptsModal();
+          break;
+        case 'action:prompts':
+          this.openPromptTemplates();
+          break;
         default:
           this.showToast(`Action executed: ${item.title}`);
       }
@@ -2424,6 +2461,166 @@ class BrowseShell {
     } else {
       this.showToast('No crash session found');
     }
+  }
+
+  // Tab Deduplication
+  async dedupTabs() {
+    try {
+      const res = await this.rpc('tabs.dedup', {});
+      if (res && res.closed_count !== undefined) {
+        if (res.closed_count > 0) {
+          this.showToast(`🧹 Closed ${res.closed_count} duplicate tab(s)`);
+          await this.fetchTabs();
+        } else {
+          this.showToast('No duplicate tabs found');
+        }
+      }
+    } catch (e) {
+      console.error('Dedup error:', e);
+      this.showToast('Failed to deduplicate tabs');
+    }
+  }
+
+  // Prompt Templates
+  async fetchPromptTemplates() {
+    if (!this.promptTemplatesBar) return;
+    try {
+      const templates = await this.rpc('prompts.list', {}) || [];
+      const dynamicChips = this.promptTemplatesBar.querySelectorAll('.btn-chip-template');
+      dynamicChips.forEach(c => c.remove());
+
+      templates.forEach(t => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-chip btn-chip-template';
+        btn.innerHTML = `${this.escapeHtml(t.icon)} ${this.escapeHtml(t.name)}`;
+        btn.title = t.prompt_template;
+        btn.addEventListener('click', () => {
+          if (this.askInput) {
+            this.askInput.value = t.prompt_template;
+            this.sendAsk();
+          }
+        });
+        this.promptTemplatesBar.appendChild(btn);
+      });
+    } catch (e) {
+      console.warn('Fetch prompt templates error:', e);
+    }
+  }
+
+  openPromptTemplates() {
+    this.sidebarPane.classList.remove('collapsed');
+    const tab = document.querySelector('.sidebar-tab[data-tab="intelligence"]');
+    if (tab) tab.click();
+    this.showToast('Prompt Templates available in quick action chips ✦');
+  }
+
+  // User Scripts & Custom Styles
+  openUserScriptsModal() {
+    if (!this.userscriptsModal) return;
+    this.userscriptsModal.classList.remove('hidden');
+    if (this.newScriptName) this.newScriptName.value = '';
+    if (this.newScriptContent) this.newScriptContent.value = '';
+    this.fetchUserScripts();
+  }
+
+  closeUserScriptsModal() {
+    if (!this.userscriptsModal) return;
+    this.userscriptsModal.classList.add('hidden');
+  }
+
+  async fetchUserScripts() {
+    if (!this.userscriptsList) return;
+    try {
+      const scripts = await this.rpc('userscripts.list', { profile: this.currentProfile || 'user' }) || [];
+      if (scripts.length === 0) {
+        this.userscriptsList.innerHTML = '<div class="empty-hint" style="padding:12px;text-align:center;font-size:11px;">No custom scripts or styles added yet.</div>';
+        return;
+      }
+      this.userscriptsList.innerHTML = scripts.map(s => {
+        return `
+          <div class="userscript-item">
+            <div class="userscript-item-left">
+              <div class="userscript-item-title">
+                <span>${this.escapeHtml(s.name)}</span>
+                <span class="userscript-badge ${s.script_type}">${s.script_type}</span>
+                <span style="font-size:10px;opacity:0.6;">@ ${this.escapeHtml(s.domain_pattern)}</span>
+              </div>
+              <span class="userscript-item-meta">${this.escapeHtml(s.content.substring(0, 50))}${s.content.length > 50 ? '...' : ''}</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="browseShell.toggleUserScript('${this.escapeHtml(s.id)}', ${!s.enabled})">${s.enabled ? 'Disable' : 'Enable'}</button>
+              <button class="btn-icon" style="font-size:11px;opacity:0.6;" title="Delete Snippet" onclick="browseShell.deleteUserScript('${this.escapeHtml(s.id)}')">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Fetch user scripts error:', e);
+    }
+  }
+
+  async saveUserScript() {
+    const name = this.newScriptName ? this.newScriptName.value.trim() : '';
+    const domain = this.newScriptDomain ? this.newScriptDomain.value.trim() : '*';
+    const type = this.newScriptType ? this.newScriptType.value : 'css';
+    const content = this.newScriptContent ? this.newScriptContent.value.trim() : '';
+
+    if (!name || !content) {
+      this.showToast('Please provide a name and code content');
+      return;
+    }
+
+    try {
+      const res = await this.rpc('userscripts.save', {
+        profile: this.currentProfile || 'user',
+        name,
+        domain_pattern: domain || '*',
+        script_type: type,
+        content
+      });
+      if (res && res.id) {
+        this.showToast(`Saved snippet: ${res.name}`);
+        if (this.newScriptName) this.newScriptName.value = '';
+        if (this.newScriptContent) this.newScriptContent.value = '';
+        this.fetchUserScripts();
+      }
+    } catch (e) {
+      console.error('Save userscript error:', e);
+      this.showToast('Failed to save snippet');
+    }
+  }
+
+  async toggleUserScript(id, enabled) {
+    try {
+      const res = await this.rpc('userscripts.toggle', { id, enabled });
+      if (res && res.toggled) {
+        this.showToast(enabled ? 'Snippet enabled' : 'Snippet disabled');
+        this.fetchUserScripts();
+      }
+    } catch (e) {
+      console.error('Toggle userscript error:', e);
+    }
+  }
+
+  async deleteUserScript(id) {
+    try {
+      const res = await this.rpc('userscripts.delete', { id });
+      if (res && res.deleted) {
+        this.showToast('Snippet deleted');
+        this.fetchUserScripts();
+      }
+    } catch (e) {
+      console.error('Delete userscript error:', e);
+    }
+  }
+
+  async applyUserScriptsForUrl(url) {
+    try {
+      const scripts = await this.rpc('userscripts.for_url', { url, profile: this.currentProfile || 'user' }) || [];
+      if (scripts.length > 0) {
+        console.log(`Applied ${scripts.length} user script(s)/style(s) for ${url}`);
+      }
+    } catch (_) {}
   }
 
   escapeHtml(str) {

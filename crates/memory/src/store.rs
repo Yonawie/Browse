@@ -72,6 +72,27 @@ pub struct SavedSessionRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptTemplateRecord {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    pub prompt_template: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserScriptRecord {
+    pub id: String,
+    pub profile_id: String,
+    pub name: String,
+    pub domain_pattern: String,
+    pub script_type: String,
+    pub content: String,
+    pub enabled: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredPageVersion {
     pub id: String,
     pub page_id: String,
@@ -145,8 +166,43 @@ impl MemoryStore {
                name       TEXT NOT NULL,
                tabs_json  TEXT NOT NULL,
                created_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS prompt_templates (
+               id              TEXT PRIMARY KEY,
+               name            TEXT NOT NULL,
+               icon            TEXT NOT NULL,
+               prompt_template TEXT NOT NULL,
+               created_at      INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS user_scripts (
+               id              TEXT PRIMARY KEY,
+               profile_id      TEXT NOT NULL,
+               name            TEXT NOT NULL,
+               domain_pattern  TEXT NOT NULL,
+               script_type     TEXT NOT NULL,
+               content         TEXT NOT NULL,
+               enabled         BOOLEAN NOT NULL,
+               created_at      INTEGER NOT NULL
              );",
         )?;
+
+        let count_templates: i64 = conn.query_row("SELECT COUNT(*) FROM prompt_templates", [], |r| r.get(0)).unwrap_or(0);
+        if count_templates == 0 {
+            let defaults = [
+                ("tmpl-pricing", "Pricing Table", "📊", "Extract all pricing tiers, features, and limits from this page into a clean Markdown comparison table."),
+                ("tmpl-code", "Explain Code", "💻", "Explain the code snippets found on this page step-by-step and highlight best practices."),
+                ("tmpl-fact", "Fact Checker", "🔍", "Identify all factual claims made on this page and note whether source citations support them."),
+                ("tmpl-bullets", "Key Takeaways", "⚡", "Summarize the essence of this page into exactly 3 punchy, actionable bullet points."),
+            ];
+            let now = now_ms();
+            for (id, name, icon, tmpl) in defaults {
+                let _ = conn.execute(
+                    "INSERT INTO prompt_templates(id, name, icon, prompt_template, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![id, name, icon, tmpl, now],
+                );
+            }
+        }
+
         Ok(Self { conn, dims: 256 })
     }
 
@@ -327,6 +383,134 @@ impl MemoryStore {
             |r| r.get::<_, String>(0),
         ).optional()?;
         Ok(row)
+    }
+
+    // -- prompt templates -------------------------------------------------
+
+    pub fn list_prompt_templates(&self) -> Result<Vec<PromptTemplateRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, icon, prompt_template, created_at FROM prompt_templates ORDER BY created_at ASC, rowid ASC"
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PromptTemplateRecord {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                icon: r.get(2)?,
+                prompt_template: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn save_prompt_template(&self, id: Option<&str>, name: &str, icon: &str, template: &str) -> Result<PromptTemplateRecord> {
+        let id = id.map(ToString::to_string).unwrap_or_else(new_id);
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO prompt_templates(id, name, icon, prompt_template, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon, prompt_template = excluded.prompt_template",
+            params![id, name, icon, template, now],
+        )?;
+        Ok(PromptTemplateRecord {
+            id,
+            name: name.to_string(),
+            icon: icon.to_string(),
+            prompt_template: template.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn delete_prompt_template(&self, id: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM prompt_templates WHERE id = ?1", params![id])?;
+        Ok(count > 0)
+    }
+
+    // -- user scripts & styles --------------------------------------------
+
+    pub fn list_user_scripts(&self, profile_id: &str) -> Result<Vec<UserScriptRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, profile_id, name, domain_pattern, script_type, content, enabled, created_at FROM user_scripts WHERE profile_id = ?1 ORDER BY created_at DESC"
+        )?;
+        let rows = stmt.query_map(params![profile_id], |r| {
+            Ok(UserScriptRecord {
+                id: r.get(0)?,
+                profile_id: r.get(1)?,
+                name: r.get(2)?,
+                domain_pattern: r.get(3)?,
+                script_type: r.get(4)?,
+                content: r.get(5)?,
+                enabled: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn save_user_script(
+        &self,
+        id: Option<&str>,
+        profile_id: &str,
+        name: &str,
+        domain_pattern: &str,
+        script_type: &str,
+        content: &str,
+    ) -> Result<UserScriptRecord> {
+        let id = id.map(ToString::to_string).unwrap_or_else(new_id);
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO user_scripts(id, profile_id, name, domain_pattern, script_type, content, enabled, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, domain_pattern = excluded.domain_pattern,
+             script_type = excluded.script_type, content = excluded.content",
+            params![id, profile_id, name, domain_pattern, script_type, content, now],
+        )?;
+        Ok(UserScriptRecord {
+            id,
+            profile_id: profile_id.to_string(),
+            name: name.to_string(),
+            domain_pattern: domain_pattern.to_string(),
+            script_type: script_type.to_string(),
+            content: content.to_string(),
+            enabled: true,
+            created_at: now,
+        })
+    }
+
+    pub fn toggle_user_script(&self, id: &str, enabled: bool) -> Result<bool> {
+        let count = self.conn.execute("UPDATE user_scripts SET enabled = ?1 WHERE id = ?2", params![enabled, id])?;
+        Ok(count > 0)
+    }
+
+    pub fn delete_user_script(&self, id: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM user_scripts WHERE id = ?1", params![id])?;
+        Ok(count > 0)
+    }
+
+    pub fn get_scripts_for_domain(&self, profile_id: &str, domain: &str) -> Result<Vec<UserScriptRecord>> {
+        let all = self.list_user_scripts(profile_id)?;
+        let dom_lower = domain.to_lowercase();
+        let matched = all.into_iter().filter(|s| {
+            if !s.enabled {
+                return false;
+            }
+            let pat = s.domain_pattern.to_lowercase();
+            if pat == "*" || pat == "*.*" || pat.is_empty() {
+                return true;
+            }
+            if pat == dom_lower || dom_lower.ends_with(&format!(".{pat}")) || dom_lower.contains(&pat) {
+                return true;
+            }
+            false
+        }).collect();
+        Ok(matched)
     }
 
     pub fn create_task(&self, title: &str) -> Result<String> {
@@ -1226,6 +1410,55 @@ mod tests {
         s.save_active_tabs(profile, r#"[{"url":"https://crates.io"}]"#).unwrap();
         let active_json = s.load_active_tabs(profile).unwrap().unwrap();
         assert_eq!(active_json, r#"[{"url":"https://crates.io"}]"#);
+    }
+
+    #[test]
+    fn prompt_templates_and_user_scripts_lifecycle() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let profile = "default";
+
+        // 1. Prompt templates (seeded with 4 defaults)
+        let tmpls = s.list_prompt_templates().unwrap();
+        assert_eq!(tmpls.len(), 4);
+        assert!(tmpls.iter().any(|t| t.name == "Pricing Table"));
+
+        // Save custom template
+        let custom = s.save_prompt_template(None, "Security Audit", "🛡️", "Audit this page for security issues.").unwrap();
+        assert_eq!(s.list_prompt_templates().unwrap().len(), 5);
+
+        // Delete custom template
+        assert!(s.delete_prompt_template(&custom.id).unwrap());
+        assert_eq!(s.list_prompt_templates().unwrap().len(), 4);
+
+        // 2. User scripts
+        let script = s.save_user_script(
+            None,
+            profile,
+            "Dark Theme Patch",
+            "example.com",
+            "css",
+            "body { background: black !important; }",
+        ).unwrap();
+        assert!(script.enabled);
+
+        let list = s.list_user_scripts(profile).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Dark Theme Patch");
+
+        // Match domain
+        let matching = s.get_scripts_for_domain(profile, "example.com").unwrap();
+        assert_eq!(matching.len(), 1);
+        let non_matching = s.get_scripts_for_domain(profile, "other.org").unwrap();
+        assert!(non_matching.is_empty());
+
+        // Toggle disabled
+        assert!(s.toggle_user_script(&script.id, false).unwrap());
+        let matching_disabled = s.get_scripts_for_domain(profile, "example.com").unwrap();
+        assert!(matching_disabled.is_empty());
+
+        // Delete
+        assert!(s.delete_user_script(&script.id).unwrap());
+        assert!(s.list_user_scripts(profile).unwrap().is_empty());
     }
 }
 

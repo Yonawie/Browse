@@ -123,7 +123,7 @@
 
         <!-- Tab 1: Page Intelligence -->
         <div class="sidebar-content active" id="tab-intelligence">
-          <div class="quick-actions">
+          <div class="quick-actions" id="prompt-templates-bar">
             <button class="btn-chip" id="chip-summarize">✦ Summarize Page</button>
             <button class="btn-chip" id="chip-keypoints">✦ Key Facts</button>
             <button class="btn-chip" id="chip-diff">⚡ What's Changed</button>
@@ -439,6 +439,7 @@
           <!-- Dynamically populated candidate items -->
         </div>
         <div class="onboarding-footer" style="gap: 10px;">
+          <button class="btn-secondary" id="btn-dedup-prune" title="Close duplicate tabs with same destination">Close Duplicates</button>
           <button class="btn-secondary" id="btn-dismiss-prune">Keep All Tabs</button>
           <button class="btn-primary" id="btn-archive-all-prune">Archive & Close Stale Tabs</button>
         </div>
@@ -565,6 +566,39 @@
         </div>
         <div class="onboarding-footer">
           <button class="btn-secondary" id="btn-dismiss-sessions">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Scripts & Custom Styles Modal -->
+    <div id="userscripts-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 560px;">
+        <div class="onboarding-header">
+          <h2>📜 User Scripts & Styles</h2>
+          <span class="subtitle">Inject custom JavaScript snippets or CSS overrides for specific sites or all pages (*).</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px; background:var(--bg-secondary); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="new-script-name" placeholder="Script Name (e.g. Invert Background, Skip Banners)..." style="flex:2; padding:6px 10px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;">
+              <input type="text" id="new-script-domain" placeholder="Domain (* for all, or example.com)" style="flex:1; padding:6px 10px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;" value="*">
+              <select id="new-script-type" style="padding:6px 8px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;">
+                <option value="css">CSS</option>
+                <option value="js">JavaScript</option>
+              </select>
+            </div>
+            <textarea id="new-script-content" placeholder="Code snippet (e.g. body { filter: invert(0.9); } or console.log('Loaded');)..." style="width:100%; height:70px; padding:6px 10px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px; font-family:var(--font-mono); resize:vertical;"></textarea>
+            <div style="display:flex; justify-content:flex-end;">
+              <button class="btn-primary" id="btn-save-userscript" style="font-size:12px; padding:5px 12px;">+ Add Snippet</button>
+            </div>
+          </div>
+          <h4 style="margin:0 0 8px 0; font-size:12px; color:var(--text-secondary); text-transform:uppercase;">Active Snippets</h4>
+          <div id="userscripts-list" style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-secondary" id="btn-dismiss-userscripts">Close</button>
         </div>
       </div>
     </div>

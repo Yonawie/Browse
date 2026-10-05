@@ -1327,5 +1327,61 @@ body.light-theme {
   align-items: center;
 }
 
+/* User Script & Style Items */
+.userscript-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.userscript-item:hover {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+}
+
+.userscript-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.userscript-item-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.userscript-item-meta {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.userscript-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.userscript-badge.js {
+  background: #f59e0b20;
+  color: #f59e0b;
+}
+
+.userscript-badge.css {
+  background: #3b82f620;
+  color: #3b82f6;
+}
+
 
 
