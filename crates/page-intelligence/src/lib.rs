@@ -2,6 +2,7 @@
 //! budgeted observations. Deterministic; models are called by the layers above
 //! through Model Gateway.
 
+pub mod adblock;
 pub mod budget;
 pub mod chunker;
 pub mod citations;
@@ -14,6 +15,7 @@ pub mod page_kind;
 pub mod phishing;
 pub mod privacy;
 
+pub use adblock::{AdBlockCategory, AdBlockDecision, AdBlockEngine, AdBlockRule, AdBlockStats};
 pub use budget::{trim_observation, ObservationBudget};
 pub use chunker::{chunk_text, Chunk, ChunkerConfig};
 pub use citations::{extract_citation_ids, format_citation_report, verify_citations, CitationMatch, CitationReport};

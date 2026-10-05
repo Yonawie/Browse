@@ -39,9 +39,19 @@
       </div>
 
       <div class="action-buttons">
+        <button class="btn-icon" id="btn-add-bookmark" title="Bookmark current page">⭐</button>
+        <button class="badge focus-badge" id="btn-adblock-shield" title="AdBlock & Tracker Shield Active" style="cursor:pointer;font-size:11px;">🛡️ Shield: On</button>
         <button class="btn-icon assistant-toggle" id="btn-toggle-sidebar" title="Toggle AI Sidebar">
           <span class="ai-sparkle">✦</span> AI Panel
         </button>
+      </div>
+    </div>
+
+    <!-- Quick Bookmarks Bar -->
+    <div class="bookmarks-bar" id="bookmarks-bar" style="display:flex;align-items:center;gap:8px;padding:3px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);font-size:12px;overflow-x:auto;">
+      <span style="opacity:0.6;font-size:11px;">⭐ Bookmarks:</span>
+      <div id="bookmarks-list" style="display:flex;gap:6px;align-items:center;">
+        <span class="empty-hint" style="font-size:11px;margin:0;">No bookmarks yet. Click ⭐ to bookmark.</span>
       </div>
     </div>
 

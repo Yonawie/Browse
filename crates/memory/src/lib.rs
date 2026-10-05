@@ -6,12 +6,14 @@
 //! extension is available; otherwise a brute-force cosine scan over
 //! `chunk_vectors_raw` (fine for tests and small profiles).
 
+pub mod bookmarks;
 pub mod export;
 pub mod grouping;
 pub mod journal;
 pub mod search;
 pub mod store;
 
+pub use bookmarks::{BookmarkRecord, NewBookmark};
 pub use export::{ExportFormat, ExportedDocument, MemoryExportReport};
 pub use grouping::{cluster_tabs, AutoTabGroup, TabForClustering};
 pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};

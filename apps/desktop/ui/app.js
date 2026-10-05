@@ -16,6 +16,7 @@ class BrowseShell {
     this.initEvents();
     this.connectEventStream();
     this.fetchTabs();
+    this.fetchBookmarks();
     this.fetchMemoryStats();
     this.checkPruneCandidates();
   }
@@ -99,6 +100,11 @@ class BrowseShell {
     this.diagCause = document.getElementById('diag-cause');
     this.diagFix = document.getElementById('diag-fix');
 
+    // Bookmarks & AdBlock Shield
+    this.btnAddBookmark = document.getElementById('btn-add-bookmark');
+    this.btnShield = document.getElementById('btn-adblock-shield');
+    this.bookmarksList = document.getElementById('bookmarks-list');
+
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
     this.playwrightModal = document.getElementById('playwright-modal');
@@ -168,6 +174,14 @@ class BrowseShell {
       this.diagInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') this.explainDiagnostic();
       });
+    }
+
+    // Bookmarks (⭐) & AdBlock Shield
+    if (this.btnAddBookmark) {
+      this.btnAddBookmark.addEventListener('click', () => this.bookmarkCurrentPage());
+    }
+    if (this.btnShield) {
+      this.btnShield.addEventListener('click', () => this.toggleShield());
     }
 
     // Selection Context (IN-4)
@@ -1045,6 +1059,68 @@ class BrowseShell {
       }
     } catch (e) {
       console.error('Explain diagnostic error:', e);
+    }
+  }
+
+  async fetchBookmarks() {
+    if (!this.bookmarksList) return;
+    try {
+      const list = await this.rpc('bookmarks.list', {}) || [];
+      if (list.length === 0) {
+        this.bookmarksList.innerHTML = '<span class="empty-hint" style="font-size:11px;margin:0;">No bookmarks yet. Click ⭐ to bookmark current page.</span>';
+        return;
+      }
+      this.bookmarksList.innerHTML = list.map(b => `
+        <span class="bookmark-item" style="cursor:pointer;padding:2px 8px;border-radius:4px;background:var(--bg-card);border:1px solid var(--border-color);display:inline-flex;align-items:center;gap:4px;" title="${this.escapeHtml(b.url)}">
+          <span>🔖</span>
+          <strong>${this.escapeHtml(b.title || b.url)}</strong>
+        </span>
+      `).join('');
+
+      this.bookmarksList.querySelectorAll('.bookmark-item').forEach((item, idx) => {
+        item.addEventListener('click', () => {
+          const bm = list[idx];
+          if (bm) {
+            this.omnibox.value = bm.url;
+            this.handleOmniboxSubmit();
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('Fetch bookmarks error:', e);
+    }
+  }
+
+  async bookmarkCurrentPage() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (!activeTab || !activeTab.url || activeTab.url === 'about:blank') return;
+
+    try {
+      await this.rpc('bookmarks.add', {
+        url: activeTab.url,
+        title: activeTab.title || activeTab.url,
+        folder: 'Bookmarks Bar'
+      });
+      await this.fetchBookmarks();
+      this.showToast(`⭐ Saved to bookmarks: ${activeTab.title || activeTab.url}`);
+    } catch (e) {
+      console.error('Bookmark add error:', e);
+      this.showToast('Failed to add bookmark');
+    }
+  }
+
+  toggleShield() {
+    this.shieldActive = !this.shieldActive;
+    if (this.btnShield) {
+      if (this.shieldActive) {
+        this.btnShield.textContent = '🛡️ Shield: On';
+        this.btnShield.className = 'badge focus-badge';
+        this.showToast('🛡️ AdBlock & Tracker Protection enabled');
+      } else {
+        this.btnShield.textContent = '🛡️ Shield: Off';
+        this.btnShield.className = 'badge offline-badge';
+        this.showToast('⚠ AdBlock Protection disabled for this session');
+      }
     }
   }
 

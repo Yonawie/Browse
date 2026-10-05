@@ -13,10 +13,10 @@ use axum::routing::{get, post};
 use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
-use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters, TabForClustering};
+use memory::{auto_cluster_tab, now_ms, MemoryStore, NewBookmark, SearchFilters, TabForClustering};
 use page_intelligence::{
     compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
-    inspect_page_privacy, inspect_url_phishing, ConsoleDiagnosticInput, NetworkDiagnosticInput,
+    inspect_page_privacy, inspect_url_phishing, AdBlockEngine, ConsoleDiagnosticInput, NetworkDiagnosticInput,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -688,6 +688,59 @@ pub async fn dispatch_rpc(
             let lock = state.store.lock().unwrap();
             let report = lock.export_memory(format).map_err(|e| json!({"error": e.to_string()}))?;
             Ok(json!(report))
+        }
+        "adblock.evaluate" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let engine = AdBlockEngine::new();
+            let decision = engine.evaluate(url);
+            Ok(json!({ "url": url, "decision": decision }))
+        }
+        "adblock.cdp_patterns" => {
+            let engine = AdBlockEngine::new();
+            let patterns = engine.cdp_blocked_patterns();
+            let count = engine.rule_count();
+            Ok(json!({ "patterns": patterns, "rule_count": count }))
+        }
+        "bookmarks.list" => {
+            let folder = req.params.get("folder").and_then(Value::as_str);
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_bookmarks(folder).unwrap_or_default();
+            Ok(json!(list))
+        }
+        "bookmarks.add" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let title = req.params.get("title").and_then(Value::as_str).unwrap_or(url);
+            let folder = req.params.get("folder").and_then(Value::as_str).map(ToString::to_string);
+            let tags: Vec<String> = req.params.get("tags")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(ToString::to_string).collect())
+                .unwrap_or_default();
+            let lock = state.store.lock().unwrap();
+            let id = lock.add_bookmark(&NewBookmark {
+                url: url.to_string(),
+                title: title.to_string(),
+                folder,
+                favicon_url: req.params.get("favicon_url").and_then(Value::as_str).map(ToString::to_string),
+                tags,
+            }).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": id, "url": url, "title": title }))
+        }
+        "bookmarks.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_bookmark(id).unwrap_or(false);
+            Ok(json!({ "deleted": deleted, "id": id }))
+        }
+        "bookmarks.import" => {
+            let html = req.params.get("html").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let count = lock.import_netscape_bookmarks(html).unwrap_or(0);
+            Ok(json!({ "imported_count": count }))
+        }
+        "bookmarks.export" => {
+            let lock = state.store.lock().unwrap();
+            let html = lock.export_netscape_bookmarks().map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "html": html }))
         }
         "skills.list" => {
             let skills = core_types::builtin_skills();
@@ -1441,10 +1494,63 @@ mod tests {
                 }
             }),
         };
-        let res_devtools = dispatch_rpc(state, req_devtools).await.unwrap();
+        let res_devtools = dispatch_rpc(state.clone(), req_devtools).await.unwrap();
         assert_eq!(res_devtools["category"], "cors_policy");
         assert!(res_devtools["title"].as_str().unwrap().contains("CORS"));
         assert!(res_devtools["suggested_fix"].as_str().unwrap().contains("Access-Control-Allow-Origin"));
+
+        // 7. AdBlock & Tracker Protection
+        let req_adblock = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(90)),
+            method: "adblock.evaluate".to_string(),
+            params: json!({ "url": "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js" }),
+        };
+        let res_adblock = dispatch_rpc(state.clone(), req_adblock).await.unwrap();
+        assert_eq!(res_adblock["decision"]["action"], "block");
+        assert_eq!(res_adblock["decision"]["category"], "advertising");
+
+        // 8. Bookmarks CRUD and Netscape Import/Export
+        let req_bm_add = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(91)),
+            method: "bookmarks.add".to_string(),
+            params: json!({
+                "url": "https://news.ycombinator.com",
+                "title": "Hacker News",
+                "folder": "Tech",
+                "tags": ["news", "tech"]
+            }),
+        };
+        let res_bm_add = dispatch_rpc(state.clone(), req_bm_add).await.unwrap();
+        let bm_id = res_bm_add["id"].as_str().unwrap();
+
+        let req_bm_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(92)),
+            method: "bookmarks.list".to_string(),
+            params: json!({ "folder": "Tech" }),
+        };
+        let res_bm_list = dispatch_rpc(state.clone(), req_bm_list).await.unwrap();
+        assert_eq!(res_bm_list.as_array().unwrap().len(), 1);
+
+        let req_bm_export = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(93)),
+            method: "bookmarks.export".to_string(),
+            params: json!({}),
+        };
+        let res_bm_export = dispatch_rpc(state.clone(), req_bm_export).await.unwrap();
+        assert!(res_bm_export["html"].as_str().unwrap().contains("Hacker News"));
+
+        let req_bm_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(94)),
+            method: "bookmarks.delete".to_string(),
+            params: json!({ "id": bm_id }),
+        };
+        let res_bm_del = dispatch_rpc(state, req_bm_del).await.unwrap();
+        assert_eq!(res_bm_del["deleted"], true);
     }
 }
 
