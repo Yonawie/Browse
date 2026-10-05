@@ -87,6 +87,18 @@ class BrowseShell {
     this.privacyGrade = document.getElementById('privacy-grade-badge');
     this.privacyDetails = document.getElementById('privacy-details');
 
+    // Auto-Group (AT-1)
+    this.btnAutoGroup = document.getElementById('btn-auto-group');
+
+    // DevTools Explainer (D-1)
+    this.btnExplainDiag = document.getElementById('btn-explain-diag');
+    this.diagInput = document.getElementById('diag-input');
+    this.diagCard = document.getElementById('diag-explanation-card');
+    this.diagTitle = document.getElementById('diag-title');
+    this.diagSummary = document.getElementById('diag-summary');
+    this.diagCause = document.getElementById('diag-cause');
+    this.diagFix = document.getElementById('diag-fix');
+
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
     this.playwrightModal = document.getElementById('playwright-modal');
@@ -141,6 +153,21 @@ class BrowseShell {
     // Focus Mode (AT-4)
     if (this.btnToggleFocus) {
       this.btnToggleFocus.addEventListener('click', () => this.toggleFocusMode());
+    }
+
+    // Auto-Group Tabs (AT-1)
+    if (this.btnAutoGroup) {
+      this.btnAutoGroup.addEventListener('click', () => this.autoGroupTabs());
+    }
+
+    // DevTools Explainer (D-1)
+    if (this.btnExplainDiag) {
+      this.btnExplainDiag.addEventListener('click', () => this.explainDiagnostic());
+    }
+    if (this.diagInput) {
+      this.diagInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.explainDiagnostic();
+      });
     }
 
     // Selection Context (IN-4)
@@ -978,6 +1005,46 @@ class BrowseShell {
     } catch (e) {
       console.error('Export memory error:', e);
       this.showToast('Failed to export memory vault');
+    }
+  }
+
+  async autoGroupTabs() {
+    try {
+      this.showToast('Analyzing tabs for task auto-grouping...');
+      const res = await this.rpc('tabs.auto_group', { apply: true });
+      if (res && res.groups && res.groups.length > 0) {
+        res.groups.forEach(g => {
+          g.tab_ids.forEach(tid => {
+            const tab = this.tabs.find(t => t.id === tid);
+            if (tab) tab.group = g.title;
+          });
+        });
+        this.renderTabs();
+        this.showToast(`✨ Organized ${res.grouped_tab_count} tab(s) into ${res.groups.length} task group(s)!`);
+      } else {
+        this.showToast('No related tabs found to form new groups.');
+      }
+    } catch (e) {
+      console.error('Auto-group error:', e);
+      this.showToast('Failed to auto-group tabs');
+    }
+  }
+
+  async explainDiagnostic() {
+    const input = this.diagInput ? this.diagInput.value.trim() : '';
+    if (!input) return;
+
+    try {
+      const res = await this.rpc('devtools.explain', { message: input });
+      if (res && this.diagCard) {
+        this.diagCard.classList.remove('hidden');
+        if (this.diagTitle) this.diagTitle.textContent = res.title || 'Diagnostic Explanation';
+        if (this.diagSummary) this.diagSummary.textContent = res.summary || '';
+        if (this.diagCause) this.diagCause.innerHTML = `<strong>Root cause:</strong> ${this.escapeHtml(res.root_cause || '')}`;
+        if (this.diagFix) this.diagFix.innerHTML = `<strong>Suggested fix:</strong> ${this.escapeHtml(res.suggested_fix || '')}`;
+      }
+    } catch (e) {
+      console.error('Explain diagnostic error:', e);
     }
   }
 

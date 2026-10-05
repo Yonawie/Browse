@@ -32,10 +32,12 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Playwright Test Generator (D-2): экспорт тестов из действий браузера с ARIA-селекторами | готово | `5f0f30f` | 32 unit (agent-runtime) + 26 (desktop) + RPC `session.export_playwright` + CLI `playwright` |
 | Privacy & Tracker Audit (D-5): аудит трекеров, рекламных сетей, сессионных реплеев и фингерпринтинга | готово | см. git log | 27 unit (page-intelligence) + RPC `page.analyze_safety` + UI Privacy Audit |
 | Memory Obsidian Vault Export (M-4): экспорт базы знаний памяти в Obsidian vault с [[wikilinks]] и JSON | готово | см. git log | 16 unit (memory) + RPC `memory.export` + UI Vault Export |
+| Tab Auto-Grouping (AT-1): детерминированная кластеризация вкладок по доменам, темам и времени | готово | см. git log | 18 unit (memory) + RPC `tabs.auto_group` + UI Auto-Group |
+| DevTools Error Explainer (D-1): локальный анализ CORS/CSP/JS-ошибок с маскированием секретов | готово | см. git log | 31 unit (page-intelligence) + RPC `devtools.explain` + UI Dev Diagnostics |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **179 тестов, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 16,
-model-gateway 34 + 3 live, page-intelligence 27, policy 14, desktop 26); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **185 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 18,
+model-gateway 34 + 3 live, page-intelligence 31, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет

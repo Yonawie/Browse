@@ -6,6 +6,7 @@ pub mod budget;
 pub mod chunker;
 pub mod citations;
 pub mod dark_patterns;
+pub mod devtools;
 pub mod diff;
 pub mod entities;
 pub mod injection;
@@ -18,6 +19,10 @@ pub use chunker::{chunk_text, Chunk, ChunkerConfig};
 pub use citations::{extract_citation_ids, format_citation_report, verify_citations, CitationMatch, CitationReport};
 pub use core_types::{ExtractedEntity, ExtractedRelation};
 pub use dark_patterns::{detect_dark_patterns, DarkPatternCategory, DarkPatternFinding};
+pub use devtools::{
+    explain_console_error, explain_network_error, redact_headers, redact_secrets, ConsoleDiagnosticInput,
+    DevToolsExplanation, DiagnosticCategory, NetworkDiagnosticInput,
+};
 pub use diff::{compute_page_diff, DiffItem, DiffKind, PageDiffReport};
 pub use entities::{extract_entities_and_relations, KnowledgeGraphExtraction};
 pub use injection::injection_signal;

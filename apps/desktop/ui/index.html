@@ -17,6 +17,7 @@
       <div class="window-controls">
         <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
         <button class="badge focus-badge" id="btn-toggle-focus" title="Focus Mode: Filter tabs and defer notifications (AT-4)">🎯 Focus</button>
+        <button class="badge focus-badge" id="btn-auto-group" title="Auto-Group Tabs by Task (AT-1)">✨ Group</button>
         <button class="badge prune-badge hidden" id="tab-prune-badge" title="Tab Hygiene: Archive Stale Tabs">🧹 Stale Tabs (<span id="prune-count">0</span>)</button>
         <span class="badge offline-badge" id="privacy-badge">Zero Telemetry</span>
       </div>
@@ -180,6 +181,23 @@
             </div>
             <div id="privacy-details" class="safety-details" style="margin-top:6px;">
               <span class="safe-tag">✔ No third-party tracking or fingerprinting scripts detected</span>
+            </div>
+          </div>
+
+          <div class="safety-section">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0;">DevTools Diagnostic Explainer (D-1)</h4>
+              <button class="btn-secondary" id="btn-explain-diag" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Analyze error and recommend fix">Explain Error</button>
+            </div>
+            <p class="settings-hint" style="margin-top:4px;font-size:11px;">Local root-cause analysis for CORS, CSP, JS exceptions, and network failures with secret redaction.</p>
+            <div style="margin-top:6px;">
+              <input type="text" id="diag-input" placeholder="e.g. Blocked by CORS policy: No 'Access-Control-Allow-Origin'..." style="width:100%;font-size:11px;padding:5px 8px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);">
+            </div>
+            <div id="diag-explanation-card" class="safety-details hidden" style="margin-top:8px;">
+              <div id="diag-title" style="font-weight:700;color:var(--text-primary);margin-bottom:4px;font-size:12px;"></div>
+              <div id="diag-summary" style="margin-bottom:4px;font-size:11px;"></div>
+              <div id="diag-cause" style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;"></div>
+              <div id="diag-fix" class="safe-tag" style="display:block;font-size:11px;margin-top:4px;line-height:1.4;"></div>
             </div>
           </div>
 

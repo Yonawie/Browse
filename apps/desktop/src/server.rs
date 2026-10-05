@@ -13,8 +13,11 @@ use axum::routing::{get, post};
 use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
-use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters};
-use page_intelligence::{compute_page_diff, detect_dark_patterns, inspect_page_privacy, inspect_url_phishing};
+use memory::{auto_cluster_tab, now_ms, MemoryStore, SearchFilters, TabForClustering};
+use page_intelligence::{
+    compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
+    inspect_page_privacy, inspect_url_phishing, ConsoleDiagnosticInput, NetworkDiagnosticInput,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -505,6 +508,32 @@ pub async fn dispatch_rpc(
                 "privacy": privacy,
             }))
         }
+        "devtools.explain" => {
+            if let Some(console_val) = req.params.get("console") {
+                let diag: ConsoleDiagnosticInput = serde_json::from_value(console_val.clone())
+                    .map_err(|e| json!({"error": format!("Invalid console diagnostic: {e}")}))?;
+                let explanation = explain_console_error(&diag);
+                Ok(json!(explanation))
+            } else if let Some(network_val) = req.params.get("network") {
+                let diag: NetworkDiagnosticInput = serde_json::from_value(network_val.clone())
+                    .map_err(|e| json!({"error": format!("Invalid network diagnostic: {e}")}))?;
+                let explanation = explain_network_error(&diag);
+                Ok(json!(explanation))
+            } else {
+                let message = req.params.get("message").and_then(Value::as_str).unwrap_or("");
+                let level = req.params.get("level").and_then(Value::as_str).unwrap_or("error");
+                let diag = ConsoleDiagnosticInput {
+                    message: message.to_string(),
+                    level: level.to_string(),
+                    source: req.params.get("source").and_then(Value::as_str).map(ToString::to_string),
+                    line: req.params.get("line").and_then(Value::as_u64).map(|v| v as u32),
+                    column: req.params.get("column").and_then(Value::as_u64).map(|v| v as u32),
+                    stack_trace: req.params.get("stack_trace").and_then(Value::as_str).map(ToString::to_string),
+                };
+                let explanation = explain_console_error(&diag);
+                Ok(json!(explanation))
+            }
+        }
         "page.diff" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
             let current_text = req.params.get("current_text").and_then(Value::as_str);
@@ -545,6 +574,42 @@ pub async fn dispatch_rpc(
             let lock = state.store.lock().unwrap();
             let group_id = lock.create_tab_group(task_id, title, auto).map_err(|e| json!({"error": e.to_string()}))?;
             Ok(json!({ "id": group_id, "title": title }))
+        }
+        "tabs.auto_group" => {
+            let tabs_input: Vec<TabForClustering> = if let Some(t_arr) = req.params.get("tabs").and_then(Value::as_array) {
+                t_arr.iter().filter_map(|item| {
+                    Some(TabForClustering {
+                        id: item.get("id")?.as_str()?.to_string(),
+                        url: item.get("url")?.as_str()?.to_string(),
+                        title: item.get("title").and_then(Value::as_str).unwrap_or("").to_string(),
+                        last_active_at: item.get("last_active_at").and_then(Value::as_i64).unwrap_or(0),
+                    })
+                }).collect()
+            } else {
+                let tabs_lock = state.tabs.lock().unwrap();
+                tabs_lock.iter().map(|t| TabForClustering {
+                    id: t.id.clone(),
+                    url: t.url.clone(),
+                    title: t.title.clone(),
+                    last_active_at: t.last_active_at,
+                }).collect()
+            };
+
+            let lock = state.store.lock().unwrap();
+            let groups = lock.suggest_tab_groups(&tabs_input).unwrap_or_default();
+
+            let apply = req.params.get("apply").and_then(Value::as_bool).unwrap_or(false);
+            if apply {
+                for g in &groups {
+                    let _ = lock.create_tab_group(None, &g.title, true);
+                }
+            }
+
+            Ok(json!({
+                "groups": groups,
+                "grouped_tab_count": groups.iter().map(|g| g.tab_ids.len()).sum::<usize>(),
+                "total_tabs": tabs_input.len()
+            }))
         }
         "tasks.list" => {
             let lock = state.store.lock().unwrap();
@@ -1339,10 +1404,48 @@ mod tests {
             method: "memory.export".to_string(),
             params: json!({ "format": "obsidian" }),
         };
-        let res_export = dispatch_rpc(state, req_export).await.unwrap();
+        let res_export = dispatch_rpc(state.clone(), req_export).await.unwrap();
         assert_eq!(res_export["format"], "obsidian");
         let docs = res_export["documents"].as_array().unwrap();
         assert!(docs.iter().any(|d| d["filename"] == "_index.md"));
+
+        // 5. Tab Auto-Grouping (AT-1)
+        let req_auto_group = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(80)),
+            method: "tabs.auto_group".to_string(),
+            params: json!({
+                "tabs": [
+                    { "id": "t1", "url": "https://github.com/rust-lang/rust", "title": "Rust Repo", "last_active_at": 1000 },
+                    { "id": "t2", "url": "https://github.com/rust-lang/cargo", "title": "Cargo Package Manager", "last_active_at": 1500 },
+                    { "id": "t3", "url": "https://news.ycombinator.com", "title": "Hacker News", "last_active_at": 999999 }
+                ],
+                "apply": true
+            }),
+        };
+        let res_auto_group = dispatch_rpc(state.clone(), req_auto_group).await.unwrap();
+        assert_eq!(res_auto_group["grouped_tab_count"], 2);
+        let grps = res_auto_group["groups"].as_array().unwrap();
+        assert_eq!(grps.len(), 1);
+        assert!(grps[0]["title"].as_str().unwrap().contains("Github") || grps[0]["title"].as_str().unwrap().contains("GitHub"));
+
+        // 6. DevTools Error Explainer (D-1)
+        let req_devtools = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(81)),
+            method: "devtools.explain".to_string(),
+            params: json!({
+                "console": {
+                    "message": "Access to XMLHttpRequest at 'https://api.example.com/data' from origin 'http://localhost:3000' has been blocked by CORS policy",
+                    "level": "error"
+                }
+            }),
+        };
+        let res_devtools = dispatch_rpc(state, req_devtools).await.unwrap();
+        assert_eq!(res_devtools["category"], "cors_policy");
+        assert!(res_devtools["title"].as_str().unwrap().contains("CORS"));
+        assert!(res_devtools["suggested_fix"].as_str().unwrap().contains("Access-Control-Allow-Origin"));
     }
 }
+
 
