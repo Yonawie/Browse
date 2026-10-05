@@ -7,6 +7,7 @@
 //! `chunk_vectors_raw` (fine for tests and small profiles).
 
 pub mod bookmarks;
+pub mod downloads;
 pub mod export;
 pub mod grouping;
 pub mod history;
@@ -15,6 +16,9 @@ pub mod search;
 pub mod store;
 
 pub use bookmarks::{BookmarkRecord, NewBookmark};
+pub use downloads::{
+    assess_download_danger, DownloadDangerLevel, DownloadRecord, DownloadStatus, NewDownload,
+};
 pub use export::{ExportFormat, ExportedDocument, MemoryExportReport};
 pub use grouping::{cluster_tabs, AutoTabGroup, TabForClustering};
 pub use history::HistoryVisitRecord;

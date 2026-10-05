@@ -18,6 +18,7 @@ class BrowseShell {
     this.fetchTabs();
     this.fetchBookmarks();
     this.fetchHistory();
+    this.fetchDownloads();
     this.fetchModelCatalog();
     this.fetchMemoryStats();
     this.checkPruneCandidates();
@@ -124,6 +125,11 @@ class BrowseShell {
 
     // Site Data Cleaner
     this.btnForgetSite = document.getElementById('btn-forget-site');
+
+    // Downloads Manager
+    this.btnToggleDownloads = document.getElementById('btn-toggle-downloads');
+    this.downloadsList = document.getElementById('downloads-list');
+    this.btnClearDownloads = document.getElementById('btn-clear-downloads');
 
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
@@ -235,6 +241,14 @@ class BrowseShell {
     // Site Data Cleaner (🗑️)
     if (this.btnForgetSite) {
       this.btnForgetSite.addEventListener('click', () => this.forgetCurrentSite());
+    }
+
+    // Downloads Manager (📥)
+    if (this.btnToggleDownloads) {
+      this.btnToggleDownloads.addEventListener('click', () => this.showDownloadsTab());
+    }
+    if (this.btnClearDownloads) {
+      this.btnClearDownloads.addEventListener('click', () => this.clearDownloads());
     }
 
     // Selection Context (IN-4)
@@ -1347,6 +1361,78 @@ class BrowseShell {
       }
     } catch (e) {
       this.showToast(`Error forgetting site: ${e.message || e}`);
+    }
+  }
+
+  showDownloadsTab() {
+    this.sidebarPane.classList.remove('collapsed');
+    const dlTab = document.querySelector('.sidebar-tab[data-tab="downloads"]');
+    if (dlTab) dlTab.click();
+    this.fetchDownloads();
+  }
+
+  async fetchDownloads() {
+    if (!this.downloadsList) return;
+    try {
+      const items = await this.rpc('downloads.list', { profile: 'default' }) || [];
+      if (items.length === 0) {
+        this.downloadsList.innerHTML = '<span class="empty-hint" style="font-size:12px;">No downloads recorded yet.</span>';
+        return;
+      }
+      this.downloadsList.innerHTML = items.map(d => {
+        const sizeMb = d.total_bytes ? (d.total_bytes / (1024 * 1024)).toFixed(1) : (d.downloaded_bytes / (1024 * 1024)).toFixed(1);
+        const dangerBadge = d.danger_level === 'dangerous'
+          ? '<span class="warning-alert" style="font-size:10px;background:#ef444422;color:#ef4444;border-color:#ef444455;">⚠️ Dangerous File</span>'
+          : d.danger_level === 'suspicious'
+          ? '<span class="warning-alert" style="font-size:10px;">⚠️ Suspicious File</span>'
+          : '<span class="safe-tag" style="font-size:10px;">✔ Safe</span>';
+
+        const statusText = d.status === 'completed'
+          ? '✔ Completed'
+          : d.status === 'in_progress'
+          ? '⏳ In Progress'
+          : d.status;
+
+        const shaHtml = d.sha256 ? `<div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);word-break:break-all;margin-top:2px;">SHA-256: ${this.escapeHtml(d.sha256)}</div>` : '';
+
+        return `
+          <div style="padding:8px 10px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="font-size:12px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;" title="${this.escapeHtml(d.filename)}">${this.escapeHtml(d.filename)}</strong>
+              <div style="display:flex;gap:6px;align-items:center;">
+                ${dangerBadge}
+                <button class="btn-icon" style="font-size:11px;opacity:0.6;" onclick="browseShell.deleteDownload('${this.escapeHtml(d.id)}')" title="Delete from list">×</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);display:flex;justify-content:space-between;">
+              <span>${statusText} &bull; ${sizeMb} MB</span>
+              <span style="opacity:0.6;">${new Date(d.started_at).toLocaleTimeString()}</span>
+            </div>
+            ${shaHtml}
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Fetch downloads error:', e);
+    }
+  }
+
+  async deleteDownload(id) {
+    try {
+      await this.rpc('downloads.delete', { id });
+      this.fetchDownloads();
+    } catch (e) {
+      console.error('Delete download error:', e);
+    }
+  }
+
+  async clearDownloads() {
+    try {
+      const res = await this.rpc('downloads.clear', { profile: 'default' });
+      this.showToast(`Cleared ${res ? res.cleared_count : 0} download record(s)`);
+      this.fetchDownloads();
+    } catch (e) {
+      console.error('Clear downloads error:', e);
     }
   }
 

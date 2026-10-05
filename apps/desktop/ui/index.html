@@ -41,6 +41,7 @@
       <div class="action-buttons">
         <button class="btn-icon" id="btn-reader-mode" title="Distraction-Free Reader Mode">📖</button>
         <button class="btn-icon" id="btn-add-bookmark" title="Bookmark current page">⭐</button>
+        <button class="btn-icon" id="btn-toggle-downloads" title="Downloads">📥</button>
         <button class="badge focus-badge" id="btn-adblock-shield" title="AdBlock & Tracker Shield Active" style="cursor:pointer;font-size:11px;">🛡️ Shield: On</button>
         <button class="btn-icon assistant-toggle" id="btn-toggle-sidebar" title="Toggle AI Sidebar">
           <span class="ai-sparkle">✦</span> AI Panel
@@ -103,6 +104,7 @@
           <button class="sidebar-tab" data-tab="safety">Safety & Privacy</button>
           <button class="sidebar-tab" data-tab="memory">Memory & Search</button>
           <button class="sidebar-tab" data-tab="history">History</button>
+          <button class="sidebar-tab" data-tab="downloads">Downloads</button>
           <button class="sidebar-tab" data-tab="settings">AI Settings</button>
         </nav>
 
@@ -321,6 +323,21 @@
             </div>
           </div>
         </div>
+
+        <!-- Tab: Downloads Manager -->
+        <div class="sidebar-content" id="tab-downloads">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4 style="margin:0;font-size:0.85rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">📥 Download Manager</h4>
+            <button class="btn-secondary" id="btn-clear-downloads" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Clear download history">Clear All</button>
+          </div>
+          <p class="settings-hint" style="margin-top:2px;font-size:11px;">Track downloads with real-time progress, dangerous extension detection, and SHA-256 integrity hashing.</p>
+          <div class="downloads-list" id="downloads-list" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+            <div class="empty-hint" style="font-size:12px;">No downloads recorded yet.</div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
     <!-- First-Run Onboarding Modal -->
     <div class="onboarding-overlay hidden" id="onboarding-modal">
       <div class="onboarding-card">

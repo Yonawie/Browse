@@ -13,7 +13,10 @@ use axum::routing::{get, post};
 use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
-use memory::{auto_cluster_tab, now_ms, MemoryStore, NewBookmark, SearchFilters, TabForClustering};
+use memory::{
+    auto_cluster_tab, now_ms, DownloadStatus, MemoryStore, NewBookmark, NewDownload, SearchFilters,
+    TabForClustering,
+};
 use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
 use page_intelligence::{
     compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
@@ -855,6 +858,56 @@ pub async fn dispatch_rpc(
             let top = lock.top_history_domains(profile_id, limit).unwrap_or_default();
             let top_json: Vec<Value> = top.into_iter().map(|(d, c)| json!({ "domain": d, "visits": c })).collect();
             Ok(json!(top_json))
+        }
+        "downloads.list" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(30) as usize;
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_downloads(profile_id, limit).unwrap_or_default();
+            Ok(json!(list))
+        }
+        "downloads.record" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let filename = req.params.get("filename").and_then(Value::as_str).unwrap_or("download");
+            let target_path = req.params.get("target_path").and_then(Value::as_str).unwrap_or(filename);
+            let total_bytes = req.params.get("total_bytes").and_then(Value::as_i64);
+            let mime_type = req.params.get("mime_type").and_then(Value::as_str).map(ToString::to_string);
+
+            let new_dl = NewDownload {
+                url: url.to_string(),
+                filename: filename.to_string(),
+                target_path: target_path.to_string(),
+                total_bytes,
+                mime_type,
+            };
+
+            let lock = state.store.lock().unwrap();
+            let id = lock.record_download(profile_id, &new_dl).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": id, "filename": filename }))
+        }
+        "downloads.update" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let downloaded_bytes = req.params.get("downloaded_bytes").and_then(Value::as_i64).unwrap_or(0);
+            let status_str = req.params.get("status").and_then(Value::as_str).unwrap_or("in_progress");
+            let status = DownloadStatus::parse_str(status_str);
+            let sha256 = req.params.get("sha256").and_then(Value::as_str);
+
+            let lock = state.store.lock().unwrap();
+            let ok = lock.update_download_progress(id, downloaded_bytes, status, sha256).unwrap_or(false);
+            Ok(json!({ "updated": ok, "id": id }))
+        }
+        "downloads.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let ok = lock.delete_download(id).unwrap_or(false);
+            Ok(json!({ "deleted": ok, "id": id }))
+        }
+        "downloads.clear" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let lock = state.store.lock().unwrap();
+            let count = lock.clear_downloads(profile_id).unwrap_or(0);
+            Ok(json!({ "cleared_count": count }))
         }
         "skills.list" => {
             let skills = core_types::builtin_skills();
@@ -1751,9 +1804,59 @@ mod tests {
             method: "page.forget_site".to_string(),
             params: json!({ "url": "https://doc.rust-lang.org/std" }),
         };
-        let res_forget = dispatch_rpc(state, req_forget).await.unwrap();
+        let res_forget = dispatch_rpc(state.clone(), req_forget).await.unwrap();
         assert_eq!(res_forget["domain"], "doc.rust-lang.org");
         assert_eq!(res_forget["status"], "forgotten");
+
+        // 13. Download Manager Lifecycle
+        let req_dl_rec = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(108)),
+            method: "downloads.record".to_string(),
+            params: json!({
+                "profile": "default",
+                "url": "https://releases.rust-lang.org/rust-init.sh",
+                "filename": "rust-init.sh",
+                "target_path": "/home/user/Downloads/rust-init.sh",
+                "total_bytes": 4096,
+                "mime_type": "text/x-shellscript"
+            }),
+        };
+        let res_dl_rec = dispatch_rpc(state.clone(), req_dl_rec).await.unwrap();
+        let dl_id = res_dl_rec["id"].as_str().unwrap();
+
+        let req_dl_up = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(109)),
+            method: "downloads.update".to_string(),
+            params: json!({
+                "id": dl_id,
+                "downloaded_bytes": 4096,
+                "status": "completed",
+                "sha256": "abcdef123456"
+            }),
+        };
+        let res_dl_up = dispatch_rpc(state.clone(), req_dl_up).await.unwrap();
+        assert_eq!(res_dl_up["updated"], true);
+
+        let req_dl_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(110)),
+            method: "downloads.list".to_string(),
+            params: json!({ "profile": "default" }),
+        };
+        let res_dl_list = dispatch_rpc(state.clone(), req_dl_list).await.unwrap();
+        assert_eq!(res_dl_list.as_array().unwrap().len(), 1);
+        assert_eq!(res_dl_list[0]["status"], "completed");
+
+        let req_dl_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(111)),
+            method: "downloads.delete".to_string(),
+            params: json!({ "id": dl_id }),
+        };
+        let res_dl_del = dispatch_rpc(state, req_dl_del).await.unwrap();
+        assert_eq!(res_dl_del["deleted"], true);
     }
 }
 
