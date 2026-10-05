@@ -46,6 +46,14 @@ pub struct PruneCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileRecord {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredPageVersion {
     pub id: String,
     pub page_id: String,
@@ -120,6 +128,43 @@ impl MemoryStore {
             params![id, kind, name, now_ms()],
         )?;
         Ok(())
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<ProfileRecord>> {
+        let mut stmt = self.conn.prepare("SELECT id, kind, name, created_at FROM profiles ORDER BY created_at ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ProfileRecord {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                name: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn create_profile(&self, kind: &str, name: &str) -> Result<ProfileRecord> {
+        let id = new_id();
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO profiles(id, kind, name, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, kind, name, now],
+        )?;
+        Ok(ProfileRecord {
+            id,
+            kind: kind.to_string(),
+            name: name.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn delete_profile(&self, id: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
+        Ok(count > 0)
     }
 
     pub fn create_task(&self, title: &str) -> Result<String> {
@@ -947,6 +992,24 @@ mod tests {
         let prev2 = s.get_previous_version_for_url(url).unwrap().expect("previous version present");
         assert_eq!(prev2.content_hash, "hash-v1");
         assert_eq!(prev2.main_text.as_deref(), Some("Pro plan: $99/mo"));
+    }
+
+    #[test]
+    fn profile_creation_listing_and_deletion() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let p1 = s.create_profile("user", "Personal").unwrap();
+        let p2 = s.create_profile("user", "Work").unwrap();
+
+        let list = s.list_profiles().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "Personal");
+        assert_eq!(list[1].name, "Work");
+
+        let deleted = s.delete_profile(&p1.id).unwrap();
+        assert!(deleted);
+        let list2 = s.list_profiles().unwrap();
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list2[0].id, p2.id);
     }
 }
 

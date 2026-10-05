@@ -16,6 +16,7 @@
       <button class="btn-icon new-tab-btn" id="new-tab-btn" title="New Tab">+</button>
       <div class="window-controls">
         <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
+        <button class="badge focus-badge" id="btn-palette" title="Command Palette (Ctrl+K / Ctrl+P)">⌘K Palette</button>
         <button class="badge focus-badge" id="btn-toggle-focus" title="Focus Mode: Filter tabs and defer notifications (AT-4)">🎯 Focus</button>
         <button class="badge focus-badge" id="btn-auto-group" title="Auto-Group Tabs by Task (AT-1)">✨ Group</button>
         <button class="badge prune-badge hidden" id="tab-prune-badge" title="Tab Hygiene: Archive Stale Tabs">🧹 Stale Tabs (<span id="prune-count">0</span>)</button>
@@ -63,7 +64,7 @@
       <section class="viewport-pane" id="viewport-pane" style="position:relative;">
         <div class="webview-header" id="webview-header">
           <span class="current-page-title" id="page-title">Welcome to Browse</span>
-          <span class="profile-indicator" id="profile-indicator">Profile: User</span>
+          <span class="profile-indicator" id="profile-indicator" style="cursor:pointer;" title="Click to Switch / Manage Profiles">Profile: default</span>
         </div>
         <div class="selection-bar hidden" id="selection-bar">
           <span class="selection-icon">✂️</span>
@@ -444,6 +445,52 @@
         <div class="onboarding-footer" style="gap: 10px;">
           <button class="btn-primary" id="btn-copy-playwright">📋 Copy Code</button>
           <button class="btn-secondary" id="btn-dismiss-playwright">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Command Palette Modal (Ctrl+K / Ctrl+P) -->
+    <div id="palette-modal" class="onboarding-overlay hidden">
+      <div class="palette-card">
+        <div class="palette-input-wrapper">
+          <span class="palette-search-icon">🔍</span>
+          <input type="text" id="palette-input" placeholder="Type a command, tab, bookmark, or search history... (Esc to close)" autocomplete="off">
+          <span class="palette-kbd-hint">ESC</span>
+        </div>
+        <div class="palette-results" id="palette-results">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="palette-footer">
+          <span>Use <b>↑</b> <b>↓</b> to navigate</span>
+          <span><b>Enter</b> to select</span>
+          <span><b>Esc</b> to close</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profiles Manager Modal -->
+    <div id="profile-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 520px;">
+        <div class="onboarding-header">
+          <h2>👥 Profile Management</h2>
+          <span class="subtitle">Separate workspaces, history, vault credentials, and downloads.</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <input type="text" id="new-profile-name" placeholder="New profile name (e.g. Work, Research)..." style="flex:1; padding:6px 10px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;">
+            <select id="new-profile-kind" style="padding:6px 8px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;">
+              <option value="user">User</option>
+              <option value="agent">Agent</option>
+              <option value="private">Private</option>
+            </select>
+            <button class="btn-primary" id="btn-create-profile" style="font-size:12px; padding:6px 12px;">+ Add</button>
+          </div>
+          <div class="profiles-list" id="profiles-list" style="display:flex; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-secondary" id="btn-dismiss-profile">Close</button>
         </div>
       </div>
     </div>

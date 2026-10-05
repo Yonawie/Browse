@@ -965,6 +965,96 @@ pub async fn dispatch_rpc(
             let deleted = lock.delete_credential(id).unwrap_or(false);
             Ok(json!({ "id": id, "deleted": deleted }))
         }
+        "profiles.list" => {
+            let lock = state.store.lock().unwrap();
+            let profiles = lock.list_profiles().unwrap_or_default();
+            Ok(json!(profiles))
+        }
+        "profiles.create" => {
+            let name = req.params.get("name").and_then(Value::as_str).unwrap_or("New Profile");
+            let kind = req.params.get("kind").and_then(Value::as_str).unwrap_or("user");
+            let lock = state.store.lock().unwrap();
+            let prof = lock.create_profile(kind, name).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(prof))
+        }
+        "profiles.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_profile(id).unwrap_or(false);
+            Ok(json!({ "id": id, "deleted": deleted }))
+        }
+        "palette.search" => {
+            let query = req.params.get("query").and_then(Value::as_str).unwrap_or("").to_lowercase();
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let mut results = Vec::new();
+
+            // 1. Actions
+            let actions = [
+                ("reader", "Toggle Reader Mode", "Distraction-free article reader", "action:reader"),
+                ("focus", "Toggle Focus Mode", "Filter tabs and defer notifications", "action:focus"),
+                ("new tab", "New Tab", "Open a fresh browsing tab", "action:new_tab"),
+                ("downloads", "Open Downloads", "View downloaded files and security audit", "action:downloads"),
+                ("passwords", "Password Vault", "View zero-knowledge saved credentials", "action:vault"),
+                ("cookies", "Cookie & Storage Inspector", "Audit cookies and tracking storage", "action:cookies"),
+                ("clear storage", "Clear Storage", "Wipe cookies and storage for current origin", "action:clear_storage"),
+                ("shield", "Toggle AdBlock Shield", "Ad and tracking protection", "action:shield"),
+                ("export vault", "Export Obsidian Vault", "Export memory knowledge graph", "action:export_vault"),
+                ("find", "Find in Page (Ctrl+F)", "Search current page content", "action:find"),
+            ];
+            for (kw, title, subtitle, act) in actions {
+                if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
+                    results.push(json!({
+                        "category": "action",
+                        "title": title,
+                        "subtitle": subtitle,
+                        "target": act,
+                    }));
+                }
+            }
+
+            // 2. Open Tabs
+            let tabs = state.tabs.lock().unwrap().clone();
+            for tab in tabs {
+                if query.is_empty() || tab.title.to_lowercase().contains(&query) || tab.url.to_lowercase().contains(&query) {
+                    results.push(json!({
+                        "category": "tab",
+                        "title": tab.title,
+                        "subtitle": tab.url,
+                        "target": tab.id,
+                    }));
+                }
+            }
+
+            // 3. Bookmarks
+            let lock = state.store.lock().unwrap();
+            if let Ok(bms) = lock.list_bookmarks(None) {
+                for bm in bms {
+                    if query.is_empty() || bm.title.to_lowercase().contains(&query) || bm.url.to_lowercase().contains(&query) {
+                        results.push(json!({
+                            "category": "bookmark",
+                            "title": bm.title,
+                            "subtitle": bm.url,
+                            "target": bm.url,
+                        }));
+                    }
+                }
+            }
+
+            // 4. History visits
+            if let Ok(visits) = lock.list_history(profile_id, 10, 0, if query.is_empty() { None } else { Some(&query) }) {
+                for v in visits {
+                    let title = v.title.as_deref().unwrap_or(&v.url);
+                    results.push(json!({
+                        "category": "history",
+                        "title": title,
+                        "subtitle": v.url,
+                        "target": v.url,
+                    }));
+                }
+            }
+
+            Ok(json!(results))
+        }
         "skills.list" => {
             let skills = core_types::builtin_skills();
             Ok(json!(skills))
@@ -1995,8 +2085,58 @@ mod tests {
             method: "vault.delete".to_string(),
             params: json!({ "id": cred_id }),
         };
-        let res_vault_del = dispatch_rpc(state, req_vault_del).await.unwrap();
+        let res_vault_del = dispatch_rpc(state.clone(), req_vault_del).await.unwrap();
         assert_eq!(res_vault_del["deleted"], true);
+
+        // 16. Multi-Profile Management
+        let req_prof_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(118)),
+            method: "profiles.list".to_string(),
+            params: json!({}),
+        };
+        let res_prof_list = dispatch_rpc(state.clone(), req_prof_list).await.unwrap();
+        assert!(!res_prof_list.as_array().unwrap().is_empty());
+
+        let req_prof_create = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(119)),
+            method: "profiles.create".to_string(),
+            params: json!({ "name": "Work Workspace", "kind": "user" }),
+        };
+        let res_prof_create = dispatch_rpc(state.clone(), req_prof_create).await.unwrap();
+        let created_prof_id = res_prof_create["id"].as_str().unwrap();
+        assert_eq!(res_prof_create["name"], "Work Workspace");
+
+        let req_prof_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(120)),
+            method: "profiles.delete".to_string(),
+            params: json!({ "id": created_prof_id }),
+        };
+        let res_prof_del = dispatch_rpc(state.clone(), req_prof_del).await.unwrap();
+        assert_eq!(res_prof_del["deleted"], true);
+
+        // 17. Command Palette Quick Search (Ctrl+K)
+        let req_palette_action = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(121)),
+            method: "palette.search".to_string(),
+            params: json!({ "query": "reader" }),
+        };
+        let res_palette_action = dispatch_rpc(state.clone(), req_palette_action).await.unwrap();
+        let action_items = res_palette_action.as_array().unwrap();
+        assert!(action_items.iter().any(|i| i["title"] == "Toggle Reader Mode"));
+
+        let req_palette_all = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(122)),
+            method: "palette.search".to_string(),
+            params: json!({ "query": "" }),
+        };
+        let res_palette_all = dispatch_rpc(state, req_palette_all).await.unwrap();
+        let all_items = res_palette_all.as_array().unwrap();
+        assert!(!all_items.is_empty());
     }
 }
 

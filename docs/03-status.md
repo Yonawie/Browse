@@ -44,9 +44,11 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Cookie & Site Storage Inspector: аудит и классификация куки, маскирование значений, очистка | готово | см. git log | 38 unit (page-intelligence) + RPC `cookies.*` + UI Storage Inspector |
 | Find in Page (Ctrl+F): полнотекстовый поиск по странице, навигация Enter/Shift+Enter, счетчик | готово | см. git log | Хоткей Ctrl+F, регистронезависимый поиск, UI Find Bar |
 | Zero-Knowledge Password Vault: шифрование логинов/паролей BLAKE3-шифром, SQLite vault | готово | см. git log | 25 unit (memory) + RPC `vault.*` + UI Password Vault |
+| Multi-Profile Management: изолированные пространства пользователя, агента и приватные профили | готово | см. git log | 26 unit (memory) + RPC `profiles.*` + UI Profile Modal |
+| Command Palette (Ctrl+K / Ctrl+P): мгновенный поиск команд, действий, вкладок, закладок, истории | готово | см. git log | 26 unit (desktop) + RPC `palette.search` + UI Palette Modal |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **202 теста, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 25,
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **207 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 26,
 model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 

@@ -23,6 +23,7 @@ class BrowseShell {
     this.fetchModelCatalog();
     this.fetchMemoryStats();
     this.checkPruneCandidates();
+    this.updateProfileIndicator();
   }
 
   initElements() {
@@ -163,6 +164,24 @@ class BrowseShell {
     // Password & Credentials Vault
     this.btnSaveCred = document.getElementById('btn-save-cred');
     this.vaultCredsList = document.getElementById('vault-creds-list');
+
+    // Command Palette (Ctrl+K / Ctrl+P)
+    this.btnPalette = document.getElementById('btn-palette');
+    this.paletteModal = document.getElementById('palette-modal');
+    this.paletteInput = document.getElementById('palette-input');
+    this.paletteResults = document.getElementById('palette-results');
+    this.paletteItems = [];
+    this.selectedPaletteIndex = 0;
+
+    // Profiles Manager
+    this.profileIndicator = document.getElementById('profile-indicator');
+    this.profileModal = document.getElementById('profile-modal');
+    this.btnDismissProfile = document.getElementById('btn-dismiss-profile');
+    this.btnCreateProfile = document.getElementById('btn-create-profile');
+    this.newProfileName = document.getElementById('new-profile-name');
+    this.newProfileKind = document.getElementById('new-profile-kind');
+    this.profilesList = document.getElementById('profiles-list');
+    this.currentProfile = localStorage.getItem('browse_active_profile') || 'default';
   }
 
   initEvents() {
@@ -306,6 +325,28 @@ class BrowseShell {
     // Password & Credentials Vault
     if (this.btnSaveCred) this.btnSaveCred.addEventListener('click', () => this.promptSaveCredential());
 
+    // Command Palette (Ctrl+K / Ctrl+P)
+    if (this.btnPalette) this.btnPalette.addEventListener('click', () => this.openCommandPalette());
+    if (this.paletteInput) {
+      this.paletteInput.addEventListener('input', () => this.searchCommandPalette());
+      this.paletteInput.addEventListener('keydown', (e) => this.handlePaletteKeydown(e));
+    }
+    if (this.paletteModal) {
+      this.paletteModal.addEventListener('click', (e) => {
+        if (e.target === this.paletteModal) this.closeCommandPalette();
+      });
+    }
+
+    // Profiles Management
+    if (this.profileIndicator) this.profileIndicator.addEventListener('click', () => this.openProfileModal());
+    if (this.btnDismissProfile) this.btnDismissProfile.addEventListener('click', () => this.closeProfileModal());
+    if (this.btnCreateProfile) this.btnCreateProfile.addEventListener('click', () => this.createProfile());
+    if (this.profileModal) {
+      this.profileModal.addEventListener('click', (e) => {
+        if (e.target === this.profileModal) this.closeProfileModal();
+      });
+    }
+
     // Selection Context (IN-4)
     if (this.btnAskSelection) {
       this.btnAskSelection.addEventListener('click', () => {
@@ -382,6 +423,9 @@ class BrowseShell {
       } else if (isCmd && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         this.openFind();
+      } else if (isCmd && (e.key.toLowerCase() === 'k' || e.key.toLowerCase() === 'p')) {
+        e.preventDefault();
+        this.openCommandPalette();
       } else if (isCmd && e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < this.tabs.length) {
@@ -398,6 +442,10 @@ class BrowseShell {
       } else if (e.key === 'Escape') {
         if (!this.confirmationCard.classList.contains('hidden')) {
           this.respondConfirmation('rejected');
+        } else if (this.paletteModal && !this.paletteModal.classList.contains('hidden')) {
+          this.closeCommandPalette();
+        } else if (this.profileModal && !this.profileModal.classList.contains('hidden')) {
+          this.closeProfileModal();
         } else if (this.pruneModal && !this.pruneModal.classList.contains('hidden')) {
           this.pruneModal.classList.add('hidden');
         } else if (onboardingModal && !onboardingModal.classList.contains('hidden')) {
@@ -1709,6 +1757,255 @@ class BrowseShell {
     } catch (e) {
       console.error('Delete cred error:', e);
     }
+  }
+
+  // Command Palette
+  openCommandPalette() {
+    if (!this.paletteModal) return;
+    this.paletteModal.classList.remove('hidden');
+    if (this.paletteInput) {
+      this.paletteInput.value = '';
+      this.paletteInput.focus();
+    }
+    this.searchCommandPalette();
+  }
+
+  closeCommandPalette() {
+    if (!this.paletteModal) return;
+    this.paletteModal.classList.add('hidden');
+    if (this.paletteInput) this.paletteInput.blur();
+  }
+
+  async searchCommandPalette() {
+    const query = this.paletteInput ? this.paletteInput.value.trim() : '';
+    try {
+      const items = await this.rpc('palette.search', { query, profile: this.currentProfile }) || [];
+      this.paletteItems = items;
+      this.selectedPaletteIndex = 0;
+      this.renderPaletteResults();
+    } catch (e) {
+      console.warn('Palette search error:', e);
+    }
+  }
+
+  renderPaletteResults() {
+    if (!this.paletteResults) return;
+    if (this.paletteItems.length === 0) {
+      this.paletteResults.innerHTML = '<div class="empty-hint" style="padding:16px;text-align:center;font-size:12px;">No matching actions, tabs, bookmarks, or history.</div>';
+      return;
+    }
+
+    const categoryIcons = {
+      action: '⚡',
+      tab: '🗂️',
+      bookmark: '⭐',
+      history: '🕒'
+    };
+
+    this.paletteResults.innerHTML = this.paletteItems.map((item, idx) => {
+      const icon = categoryIcons[item.category] || '🔍';
+      const isSelected = idx === this.selectedPaletteIndex ? 'active' : '';
+      return `
+        <div class="palette-item ${isSelected}" data-index="${idx}" onclick="browseShell.selectPaletteIndex(${idx})">
+          <div class="palette-item-left">
+            <span class="palette-item-icon">${icon}</span>
+            <div class="palette-item-text">
+              <span class="palette-item-title">${this.escapeHtml(item.title)}</span>
+              <span class="palette-item-subtitle">${this.escapeHtml(item.subtitle || '')}</span>
+            </div>
+          </div>
+          <span class="palette-category-badge">${this.escapeHtml(item.category)}</span>
+        </div>
+      `;
+    }).join('');
+
+    const activeEl = this.paletteResults.querySelector('.palette-item.active');
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  selectPaletteIndex(idx) {
+    this.selectedPaletteIndex = idx;
+    if (this.paletteItems[idx]) {
+      this.executePaletteItem(this.paletteItems[idx]);
+    }
+  }
+
+  handlePaletteKeydown(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (this.paletteItems.length > 0) {
+        this.selectedPaletteIndex = (this.selectedPaletteIndex + 1) % this.paletteItems.length;
+        this.renderPaletteResults();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (this.paletteItems.length > 0) {
+        this.selectedPaletteIndex = (this.selectedPaletteIndex - 1 + this.paletteItems.length) % this.paletteItems.length;
+        this.renderPaletteResults();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (this.paletteItems[this.selectedPaletteIndex]) {
+        this.executePaletteItem(this.paletteItems[this.selectedPaletteIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      this.closeCommandPalette();
+    }
+  }
+
+  async executePaletteItem(item) {
+    this.closeCommandPalette();
+    if (!item) return;
+
+    if (item.category === 'action') {
+      switch (item.target) {
+        case 'action:reader':
+          this.toggleReaderMode();
+          break;
+        case 'action:focus':
+          this.toggleFocusMode();
+          break;
+        case 'action:new_tab':
+          this.createTab('https://example.com');
+          break;
+        case 'action:downloads': {
+          this.sidebarPane.classList.remove('collapsed');
+          const tab = document.querySelector('.sidebar-tab[data-tab="downloads"]');
+          if (tab) tab.click();
+          break;
+        }
+        case 'action:vault': {
+          this.sidebarPane.classList.remove('collapsed');
+          const tab = document.querySelector('.sidebar-tab[data-tab="settings"]');
+          if (tab) tab.click();
+          break;
+        }
+        case 'action:cookies':
+          this.inspectCookies();
+          break;
+        case 'action:clear_storage':
+          this.clearOriginStorage();
+          break;
+        case 'action:shield':
+          this.toggleShield();
+          break;
+        case 'action:export_vault':
+          this.exportMemory();
+          break;
+        case 'action:find':
+          this.openFind();
+          break;
+        default:
+          this.showToast(`Action executed: ${item.title}`);
+      }
+    } else if (item.category === 'tab') {
+      this.switchTab(item.target);
+    } else if (item.category === 'bookmark' || item.category === 'history') {
+      this.navigate(item.target);
+    }
+  }
+
+  // Profile Management
+  updateProfileIndicator() {
+    if (this.profileIndicator) {
+      this.profileIndicator.textContent = `Profile: ${this.currentProfile}`;
+    }
+  }
+
+  openProfileModal() {
+    if (!this.profileModal) return;
+    this.profileModal.classList.remove('hidden');
+    this.fetchProfiles();
+  }
+
+  closeProfileModal() {
+    if (!this.profileModal) return;
+    this.profileModal.classList.add('hidden');
+  }
+
+  async fetchProfiles() {
+    if (!this.profilesList) return;
+    try {
+      const profiles = await this.rpc('profiles.list', {}) || [];
+      if (profiles.length === 0) {
+        this.profilesList.innerHTML = '<div class="empty-hint" style="font-size:11px;">No profiles found.</div>';
+        return;
+      }
+      this.profilesList.innerHTML = profiles.map(p => {
+        const isActive = p.id === this.currentProfile;
+        return `
+          <div class="profile-card-item ${isActive ? 'active-profile' : ''}">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:14px;">${p.kind === 'agent' ? '🤖' : p.kind === 'private' ? '🕶️' : '👤'}</span>
+              <div>
+                <strong style="font-size:12px;color:var(--text-main);">${this.escapeHtml(p.name)}</strong>
+                <span style="font-size:10px;opacity:0.6;margin-left:6px;text-transform:uppercase;">[${this.escapeHtml(p.kind)}]</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              ${isActive
+                ? '<span style="font-size:10px;color:var(--accent);font-weight:600;">ACTIVE</span>'
+                : `<button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="browseShell.switchProfile('${this.escapeHtml(p.id)}', '${this.escapeHtml(p.name)}')">Switch</button>`
+              }
+              ${p.id !== 'default'
+                ? `<button class="btn-icon" style="font-size:11px;opacity:0.6;" title="Delete Profile" onclick="browseShell.deleteProfile('${this.escapeHtml(p.id)}')">×</button>`
+                : ''
+              }
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Fetch profiles error:', e);
+    }
+  }
+
+  async createProfile() {
+    const name = this.newProfileName ? this.newProfileName.value.trim() : '';
+    const kind = this.newProfileKind ? this.newProfileKind.value : 'user';
+    if (!name) return;
+    try {
+      const prof = await this.rpc('profiles.create', { name, kind });
+      if (prof) {
+        if (this.newProfileName) this.newProfileName.value = '';
+        this.showToast(`Profile "${prof.name}" created`);
+        this.fetchProfiles();
+      }
+    } catch (e) {
+      this.showToast(`Error creating profile: ${e.message || e}`);
+    }
+  }
+
+  async deleteProfile(id) {
+    if (!confirm('Are you sure you want to delete this profile and its workspace data?')) return;
+    try {
+      await this.rpc('profiles.delete', { id });
+      this.showToast('Profile deleted');
+      if (this.currentProfile === id) {
+        this.switchProfile('default', 'Default User');
+      } else {
+        this.fetchProfiles();
+      }
+    } catch (e) {
+      this.showToast(`Error deleting profile: ${e.message || e}`);
+    }
+  }
+
+  switchProfile(id, name) {
+    this.currentProfile = id;
+    localStorage.setItem('browse_active_profile', id);
+    if (this.profileIndicator) {
+      this.profileIndicator.textContent = `Profile: ${name || id}`;
+    }
+    this.showToast(`Switched to profile: ${name || id}`);
+    this.fetchProfiles();
+    this.fetchBookmarks();
+    this.fetchHistory();
+    this.fetchDownloads();
+    this.fetchVaultCredentials();
   }
 
   escapeHtml(str) {
