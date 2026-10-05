@@ -33,8 +33,10 @@ pub mod stream;
 
 pub use downloader::{
     default_models_directory, get_recommended_catalog, inspect_model_installation, ModelCatalogEntry,
-    ModelInstallStatus,
+    ModelDownloadProgress, ModelInstallStatus,
 };
+#[cfg(feature = "http")]
+pub use downloader::download_catalog_model;
 
 /// Kept for callers that predate the generalised provider.
 pub mod llama_server {

@@ -98,6 +98,17 @@ pub fn inspect_model_installation(models_dir: &Path, entry: &ModelCatalogEntry) 
     }
 }
 
+/// Progress notification during catalog model download.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelDownloadProgress {
+    pub model_id: String,
+    pub filename: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub percent: f32,
+    pub complete: bool,
+}
+
 /// Resolves the default local models directory.
 pub fn default_models_directory() -> PathBuf {
     if let Ok(dir) = std::env::var("BROWSE_MODELS_DIR") {
@@ -107,6 +118,102 @@ pub fn default_models_directory() -> PathBuf {
     } else {
         PathBuf::from("models")
     }
+}
+
+/// Download a model from catalog into target models directory with progress reporting.
+/// In offline mode or when network fails, returns an error cleanly.
+#[cfg(feature = "http")]
+pub async fn download_catalog_model<F>(
+    models_dir: &Path,
+    entry: &ModelCatalogEntry,
+    client_opt: Option<&reqwest::Client>,
+    mut on_progress: F,
+) -> Result<PathBuf, String>
+where
+    F: FnMut(ModelDownloadProgress) + Send,
+{
+    if let Err(e) = std::fs::create_dir_all(models_dir) {
+        return Err(format!("Failed to create models directory: {e}"));
+    }
+
+    let default_client;
+    let client = match client_opt {
+        Some(c) => c,
+        None => {
+            default_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(3600))
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+            &default_client
+        }
+    };
+
+    let target_path = models_dir.join(&entry.filename);
+    let part_path = models_dir.join(format!("{}.part", entry.filename));
+
+    let res = client
+        .get(&entry.download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Network request failed: {e}"))?;
+
+    if !res.status().is_success() {
+        return Err(format!("Download failed with HTTP status: {}", res.status()));
+    }
+
+    let total_bytes = res.content_length().unwrap_or(entry.size_bytes);
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let mut file = tokio::fs::File::create(&part_path)
+        .await
+        .map_err(|e| format!("Failed to create file: {e}"))?;
+
+    let mut stream = res.bytes_stream();
+    let mut downloaded = 0u64;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("Error reading chunk: {e}"))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Error writing chunk: {e}"))?;
+
+        downloaded += chunk.len() as u64;
+        let pct = if total_bytes > 0 {
+            (downloaded as f32 / total_bytes as f32) * 100.0
+        } else {
+            0.0
+        };
+
+        on_progress(ModelDownloadProgress {
+            model_id: entry.id.clone(),
+            filename: entry.filename.clone(),
+            downloaded_bytes: downloaded,
+            total_bytes,
+            percent: pct,
+            complete: false,
+        });
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("Error flushing file: {e}"))?;
+    drop(file);
+
+    if let Err(e) = std::fs::rename(&part_path, &target_path) {
+        return Err(format!("Failed to finalize downloaded file: {e}"));
+    }
+
+    on_progress(ModelDownloadProgress {
+        model_id: entry.id.clone(),
+        filename: entry.filename.clone(),
+        downloaded_bytes: downloaded,
+        total_bytes,
+        percent: 100.0,
+        complete: true,
+    });
+
+    Ok(target_path)
 }
 
 #[cfg(test)]

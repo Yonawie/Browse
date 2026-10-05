@@ -1598,9 +1598,28 @@ class BrowseShell {
       this.modelCatalogList.innerHTML = res.models.map(m => {
         const isInstalled = m.status && m.status.status === 'installed';
         const sizeMb = isInstalled ? (m.status.size_bytes / (1024 * 1024)).toFixed(0) : (m.status.expected_size_bytes / (1024 * 1024)).toFixed(0);
-        const statusBadge = isInstalled
-          ? '<span class="safe-tag" style="font-size:10px;">✔ Installed</span>'
-          : '<span class="warning-alert" style="font-size:10px;">Not downloaded</span>';
+        const prog = m.progress;
+        const isDownloading = prog && !prog.complete && prog.downloaded_bytes > 0;
+
+        let statusBadge = '<span class="warning-alert" style="font-size:10px;">Not downloaded</span>';
+        if (isInstalled) {
+          statusBadge = '<span class="safe-tag" style="font-size:10px;">✔ Installed</span>';
+        } else if (isDownloading) {
+          statusBadge = `<span class="focus-badge" style="font-size:10px;">⏳ Downloading ${prog.percent.toFixed(1)}%</span>`;
+        }
+
+        let actionButton = '';
+        if (isInstalled) {
+          actionButton = `<div style="font-size:10px;color:var(--text-dim);">Ready for offline inference in <code>${this.escapeHtml(res.models_dir)}</code></div>`;
+        } else if (isDownloading) {
+          actionButton = `
+            <div style="width:100%;background:var(--bg-main);border-radius:4px;height:6px;overflow:hidden;margin-top:4px;">
+              <div style="background:var(--accent-color);height:100%;width:${prog.percent}%;"></div>
+            </div>
+          `;
+        } else {
+          actionButton = `<button class="btn-primary btn-download-model" data-id="${m.id}" style="font-size:10px;padding:3px 8px;cursor:pointer;">📥 1-Click Download</button>`;
+        }
 
         return `
           <div style="padding:8px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;">
@@ -1611,14 +1630,45 @@ class BrowseShell {
             <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">
               Tier: <code>${m.tier}</code> &bull; Size: ~${sizeMb} MB
             </div>
-            ${isInstalled
-              ? `<div style="font-size:10px;color:var(--text-dim);">Ready for offline inference in <code>${this.escapeHtml(res.models_dir)}</code></div>`
-              : `<button class="btn-primary" style="font-size:10px;padding:3px 8px;cursor:pointer;" onclick="browseShell.showToast('Download instructions available in docs/02-architecture.md')">📥 Setup Model</button>`}
+            ${actionButton}
           </div>
         `;
       }).join('');
+
+      this.modelCatalogList.querySelectorAll('.btn-download-model').forEach(btn => {
+        btn.addEventListener('click', () => {
+          this.downloadModel(btn.dataset.id);
+        });
+      });
     } catch (e) {
       console.warn('Fetch model catalog error:', e);
+    }
+  }
+
+  async downloadModel(id) {
+    try {
+      this.showToast(`Starting download for ${id}...`);
+      const res = await this.rpc('models.download', { id });
+      if (res && res.status === 'started') {
+        this.showToast(`📥 Downloading model ${id} in background...`);
+        // Poll progress periodically
+        const interval = setInterval(async () => {
+          const progRes = await this.rpc('models.progress', { id });
+          const prog = progRes ? progRes.progress : null;
+          if (prog && prog.complete) {
+            clearInterval(interval);
+            this.showToast(`✔ Model ${id} downloaded and verified!`);
+            this.fetchModelCatalog();
+          } else {
+            this.fetchModelCatalog();
+          }
+        }, 3000);
+      } else if (res && res.status === 'already_installed') {
+        this.showToast(`Model ${id} is already installed.`);
+      }
+    } catch (e) {
+      console.error('Download model error:', e);
+      this.showToast(`Failed to start download: ${e.message || e}`);
     }
   }
 

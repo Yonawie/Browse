@@ -17,7 +17,10 @@ use memory::{
     auto_cluster_tab, now_ms, DownloadStatus, MemoryStore, NewBookmark, NewCredential, NewDownload,
     SearchFilters, TabForClustering,
 };
-use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
+use model_gateway::{
+    default_models_directory, download_catalog_model, get_recommended_catalog, inspect_model_installation,
+    ModelDownloadProgress,
+};
 use page_intelligence::{
     audit_cookies, compute_page_diff, detect_dark_patterns, explain_console_error,
     explain_network_error, extract_reader_article, inspect_page_privacy, inspect_url_phishing,
@@ -76,6 +79,7 @@ pub struct ShellServerState {
     pub focus_mode: Arc<Mutex<bool>>,
     pub current_selection: Arc<Mutex<Option<String>>>,
     pub network_log: Arc<Mutex<Vec<NetworkRequestEntry>>>,
+    pub model_downloads: Arc<Mutex<std::collections::HashMap<String, ModelDownloadProgress>>>,
 }
 
 impl ShellServerState {
@@ -87,6 +91,7 @@ impl ShellServerState {
             focus_mode: Arc::new(Mutex::new(false)),
             current_selection: Arc::new(Mutex::new(None)),
             network_log: Arc::new(Mutex::new(Vec::new())),
+            model_downloads: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -1228,19 +1233,62 @@ pub async fn dispatch_rpc(
             let models_dir = default_models_directory();
             let catalog = get_recommended_catalog();
             let mut statuses = Vec::new();
+            let active_dls = state.model_downloads.lock().unwrap().clone();
             for entry in &catalog {
                 let status = inspect_model_installation(&models_dir, entry);
+                let progress = active_dls.get(&entry.id).cloned();
                 statuses.push(json!({
                     "id": entry.id,
                     "name": entry.name,
                     "tier": entry.tier,
                     "status": status,
+                    "progress": progress,
                 }));
             }
             Ok(json!({
                 "models_dir": models_dir.to_string_lossy(),
                 "models": statuses
             }))
+        }
+        "models.download" => {
+            let model_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let catalog = get_recommended_catalog();
+            let entry = catalog.into_iter().find(|m| m.id == model_id)
+                .ok_or_else(|| json!({ "code": -32602, "message": format!("Model '{model_id}' not found in catalog") }))?;
+
+            let models_dir = default_models_directory();
+            let status = inspect_model_installation(&models_dir, &entry);
+            if matches!(status, model_gateway::ModelInstallStatus::Installed { .. }) {
+                return Ok(json!({ "status": "already_installed", "id": model_id }));
+            }
+
+            let dl_map = state.model_downloads.clone();
+            let model_id_clone = model_id.to_string();
+
+            // Spawn asynchronous background download task
+            tokio::spawn(async move {
+                let dl_map_inner = dl_map.clone();
+                let res = download_catalog_model(&models_dir, &entry, None, move |prog| {
+                    let mut lock = dl_map_inner.lock().unwrap();
+                    lock.insert(prog.model_id.clone(), prog);
+                }).await;
+
+                if let Err(err) = res {
+                    eprintln!("Model download error for {}: {}", entry.id, err);
+                }
+            });
+
+            Ok(json!({ "status": "started", "id": model_id_clone }))
+        }
+        "models.progress" => {
+            let model_id = req.params.get("id").and_then(Value::as_str);
+            let dls = state.model_downloads.lock().unwrap().clone();
+            if let Some(id) = model_id {
+                let prog = dls.get(id);
+                Ok(json!({ "progress": prog }))
+            } else {
+                Ok(json!(dls))
+            }
         }
         "history.list" => {
             let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
@@ -2958,6 +3006,58 @@ mod tests {
         };
         let res_sum_after = dispatch_rpc(state, req_sum_after).await.unwrap();
         assert_eq!(res_sum_after["total_requests"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_models_catalog_and_download_rpc() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
+
+        // 1. Catalog
+        let req_cat = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(170)),
+            method: "models.catalog".to_string(),
+            params: json!({}),
+        };
+        let res_cat = dispatch_rpc(state.clone(), req_cat).await.unwrap();
+        let cat_arr = res_cat["catalog"].as_array().unwrap();
+        assert!(cat_arr.len() >= 3);
+
+        // 2. Status
+        let req_stat = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(171)),
+            method: "models.status".to_string(),
+            params: json!({}),
+        };
+        let res_stat = dispatch_rpc(state.clone(), req_stat).await.unwrap();
+        let models_arr = res_stat["models"].as_array().unwrap();
+        assert!(models_arr.len() >= 3);
+
+        // 3. Progress tracking
+        {
+            let mut lock = state.model_downloads.lock().unwrap();
+            lock.insert("bge-small-en-v1.5".to_string(), ModelDownloadProgress {
+                model_id: "bge-small-en-v1.5".to_string(),
+                filename: "bge-small-en-v1.5-q8_0.gguf".to_string(),
+                downloaded_bytes: 15_000_000,
+                total_bytes: 35_000_000,
+                percent: 42.85,
+                complete: false,
+            });
+        }
+
+        let req_prog = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(172)),
+            method: "models.progress".to_string(),
+            params: json!({ "id": "bge-small-en-v1.5" }),
+        };
+        let res_prog = dispatch_rpc(state.clone(), req_prog).await.unwrap();
+        assert_eq!(res_prog["progress"]["model_id"], "bge-small-en-v1.5");
+        let pct = res_prog["progress"]["percent"].as_f64().unwrap();
+        assert!((pct - 42.85).abs() < 0.01);
     }
 }
 
