@@ -56,8 +56,10 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Smart Tab Deduplication: очистка UTM-трекеров, канонизация URL, дедупликация вкладок | готово | см. git log | RPC `tabs.dedup` + Command Palette + Tab Hygiene modal |
 | AI Prompt Templates: библиотека быстрых промптов ("Pricing Table", "Code", "Fact Check", "Takeaways") | готово | см. git log | 29 unit (memory) + RPC `prompts.*` + динамические чипы ИИ |
 | User Scripts & Custom Styles: локальные расширения JS/CSS с паттернами доменов (*, domain) | готово | см. git log | RPC `userscripts.*` + UI User Scripts Modal |
+| Offline Reading List ("Read It Later"): отложенное чтение статей, фильтр прочитанного, время чтения | готово | см. git log | 30 unit (memory) + RPC `reading_list.*` + UI Reading List Modal |
+| Live Network Inspector: инспекция HTTP-трафика, размеров, задержек и заблокированных трекеров | готово | см. git log | 28 unit (desktop) + RPC `network.*` + UI Network Inspector Modal |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **212 тестов, 0 падений**
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **215 тестов, 0 падений**
 (agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 29,
 model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.

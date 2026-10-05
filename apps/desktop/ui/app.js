@@ -225,6 +225,27 @@ class BrowseShell {
     this.btnSaveUserscript = document.getElementById('btn-save-userscript');
     this.btnDismissUserscripts = document.getElementById('btn-dismiss-userscripts');
     this.userscriptsList = document.getElementById('userscripts-list');
+
+    // Reading List & Network Inspector
+    this.btnReadingList = document.getElementById('btn-reading-list');
+    this.readingListModal = document.getElementById('reading-list-modal');
+    this.btnDismissReadingList = document.getElementById('btn-dismiss-reading-list');
+    this.btnAddCurrentReading = document.getElementById('btn-add-current-to-reading');
+    this.readingListItems = document.getElementById('reading-list-items');
+    this.btnReadingFilterAll = document.getElementById('btn-reading-filter-all');
+    this.btnReadingFilterUnread = document.getElementById('btn-reading-filter-unread');
+    this.readingListUnreadOnly = false;
+
+    this.btnNetworkMonitor = document.getElementById('btn-network-monitor');
+    this.networkModal = document.getElementById('network-modal');
+    this.btnDismissNetwork = document.getElementById('btn-dismiss-network');
+    this.btnNetworkFilterBlocked = document.getElementById('btn-network-filter-blocked');
+    this.btnClearNetworkLog = document.getElementById('btn-clear-network-log');
+    this.networkRequestsTbody = document.getElementById('network-requests-tbody');
+    this.netTotalCount = document.getElementById('net-total-count');
+    this.netBlockedCount = document.getElementById('net-blocked-count');
+    this.netTotalBytes = document.getElementById('net-total-bytes');
+    this.networkBlockedOnly = false;
   }
 
   initEvents() {
@@ -505,6 +526,51 @@ class BrowseShell {
       this.btnSaveUserscript.addEventListener('click', () => this.saveUserScript());
     }
 
+    // Reading list event bindings
+    if (this.btnReadingList) {
+      this.btnReadingList.addEventListener('click', () => this.openReadingListModal());
+    }
+    if (this.btnDismissReadingList) {
+      this.btnDismissReadingList.addEventListener('click', () => this.closeReadingListModal());
+    }
+    if (this.btnAddCurrentReading) {
+      this.btnAddCurrentReading.addEventListener('click', () => this.addCurrentPageToReadingList());
+    }
+    if (this.btnReadingFilterAll) {
+      this.btnReadingFilterAll.addEventListener('click', () => {
+        this.readingListUnreadOnly = false;
+        this.btnReadingFilterAll.classList.add('active');
+        if (this.btnReadingFilterUnread) this.btnReadingFilterUnread.classList.remove('active');
+        this.fetchReadingList();
+      });
+    }
+    if (this.btnReadingFilterUnread) {
+      this.btnReadingFilterUnread.addEventListener('click', () => {
+        this.readingListUnreadOnly = true;
+        this.btnReadingFilterUnread.classList.add('active');
+        if (this.btnReadingFilterAll) this.btnReadingFilterAll.classList.remove('active');
+        this.fetchReadingList();
+      });
+    }
+
+    // Network monitor bindings
+    if (this.btnNetworkMonitor) {
+      this.btnNetworkMonitor.addEventListener('click', () => this.openNetworkModal());
+    }
+    if (this.btnDismissNetwork) {
+      this.btnDismissNetwork.addEventListener('click', () => this.closeNetworkModal());
+    }
+    if (this.btnClearNetworkLog) {
+      this.btnClearNetworkLog.addEventListener('click', () => this.clearNetworkLog());
+    }
+    if (this.btnNetworkFilterBlocked) {
+      this.btnNetworkFilterBlocked.addEventListener('click', () => {
+        this.networkBlockedOnly = !this.networkBlockedOnly;
+        this.btnNetworkFilterBlocked.classList.toggle('active', this.networkBlockedOnly);
+        this.fetchNetworkLog();
+      });
+    }
+
     // Zoom badge click
     if (this.zoomLevelBadge) {
       this.zoomLevelBadge.addEventListener('click', () => this.resetZoom());
@@ -570,6 +636,10 @@ class BrowseShell {
           this.closeSessionsModal();
         } else if (this.userscriptsModal && !this.userscriptsModal.classList.contains('hidden')) {
           this.closeUserScriptsModal();
+        } else if (this.readingListModal && !this.readingListModal.classList.contains('hidden')) {
+          this.closeReadingListModal();
+        } else if (this.networkModal && !this.networkModal.classList.contains('hidden')) {
+          this.closeNetworkModal();
         } else if (this.profileModal && !this.profileModal.classList.contains('hidden')) {
           this.closeProfileModal();
         } else if (this.securityModal && !this.securityModal.classList.contains('hidden')) {
@@ -967,6 +1037,7 @@ class BrowseShell {
       this.webFrame.src = url;
       this.analyzeSafety(url);
       this.applyUserScriptsForUrl(url);
+      this.recordNetworkTraffic(url, 'GET', 200, 'document', 14200, 45, false, null);
       this.rpc('tabs.navigate', { tab_id: activeTab.id, url });
       this.recordedActions.push({ tool: 'navigate', url });
     }
@@ -2085,6 +2156,15 @@ class BrowseShell {
         case 'action:prompts':
           this.openPromptTemplates();
           break;
+        case 'action:reading_list':
+          this.openReadingListModal();
+          break;
+        case 'action:add_reading_list':
+          this.addCurrentPageToReadingList();
+          break;
+        case 'action:network_monitor':
+          this.openNetworkModal();
+          break;
         default:
           this.showToast(`Action executed: ${item.title}`);
       }
@@ -2620,6 +2700,186 @@ class BrowseShell {
       if (scripts.length > 0) {
         console.log(`Applied ${scripts.length} user script(s)/style(s) for ${url}`);
       }
+    } catch (_) {}
+  }
+
+  // Reading List
+  openReadingListModal() {
+    if (this.readingListModal) {
+      this.readingListModal.classList.remove('hidden');
+      this.fetchReadingList();
+    }
+  }
+
+  closeReadingListModal() {
+    if (this.readingListModal) {
+      this.readingListModal.classList.add('hidden');
+    }
+  }
+
+  async fetchReadingList() {
+    if (!this.readingListItems) return;
+    try {
+      const items = await this.rpc('reading_list.list', {
+        profile: this.currentProfile || 'default',
+        unread_only: this.readingListUnreadOnly
+      }) || [];
+
+      if (items.length === 0) {
+        this.readingListItems.innerHTML = '<span class="empty-hint" style="font-size:12px;padding:8px 0;">No articles in reading list. Click "+ Save Active Page" to add one.</span>';
+        return;
+      }
+
+      this.readingListItems.innerHTML = items.map(it => `
+        <div class="reading-item">
+          <div style="flex:1;min-width:0;">
+            <a class="reading-item-title" href="#" data-url="${this.escapeHtml(it.url)}" style="${it.is_read ? 'opacity:0.6;text-decoration:line-through;' : ''}">${this.escapeHtml(it.title || it.url)}</a>
+            <div class="reading-item-meta">
+              <span>⏱ ${it.reading_time_min} min read</span>
+              <span>•</span>
+              <span>${it.is_read ? '✔ Read' : 'Unread'}</span>
+              <span>•</span>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;">${this.escapeHtml(it.url)}</span>
+            </div>
+            ${it.excerpt ? `<div class="reading-item-excerpt">${this.escapeHtml(it.excerpt)}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-left:8px;">
+            <button class="btn-secondary chip-action btn-toggle-read" data-id="${it.id}" data-read="${it.is_read}" style="font-size:11px;padding:3px 7px;">
+              ${it.is_read ? 'Mark Unread' : 'Mark Read'}
+            </button>
+            <button class="btn-icon btn-del-reading" data-id="${it.id}" title="Remove from list" style="font-size:12px;padding:3px 6px;">✕</button>
+          </div>
+        </div>
+      `).join('');
+
+      this.readingListItems.querySelectorAll('.reading-item-title').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.navigate(el.dataset.url);
+          this.closeReadingListModal();
+        });
+      });
+
+      this.readingListItems.querySelectorAll('.btn-toggle-read').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const currentRead = btn.dataset.read === 'true';
+          await this.rpc('reading_list.toggle_read', { id, is_read: !currentRead });
+          this.fetchReadingList();
+        });
+      });
+
+      this.readingListItems.querySelectorAll('.btn-del-reading').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          await this.rpc('reading_list.delete', { id });
+          this.showToast('Removed from reading list');
+          this.fetchReadingList();
+        });
+      });
+    } catch (e) {
+      console.error('Fetch reading list error:', e);
+    }
+  }
+
+  async addCurrentPageToReadingList() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (!activeTab || !activeTab.url || activeTab.url === 'about:blank') {
+      this.showToast('No active webpage to save');
+      return;
+    }
+    try {
+      const res = await this.rpc('reading_list.add', {
+        profile: this.currentProfile || 'default',
+        url: activeTab.url,
+        title: activeTab.title || activeTab.url,
+        excerpt: activeTab.title || 'Saved offline article',
+        reading_time_min: 4
+      });
+      if (res && res.id) {
+        this.showToast(`🔖 Saved to reading list: ${res.title}`);
+        this.fetchReadingList();
+      }
+    } catch (e) {
+      console.error('Add reading list error:', e);
+      this.showToast('Failed to save to reading list');
+    }
+  }
+
+  // Live Network Monitor
+  openNetworkModal() {
+    if (this.networkModal) {
+      this.networkModal.classList.remove('hidden');
+      this.fetchNetworkLog();
+    }
+  }
+
+  closeNetworkModal() {
+    if (this.networkModal) {
+      this.networkModal.classList.add('hidden');
+    }
+  }
+
+  async fetchNetworkLog() {
+    if (!this.networkRequestsTbody) return;
+    try {
+      const summary = await this.rpc('network.summary', {});
+      if (summary) {
+        if (this.netTotalCount) this.netTotalCount.textContent = summary.total_requests;
+        if (this.netBlockedCount) this.netBlockedCount.textContent = summary.blocked_requests;
+        if (this.netTotalBytes) {
+          const kb = (summary.total_bytes / 1024).toFixed(1);
+          this.netTotalBytes.textContent = `${kb} KB`;
+        }
+      }
+
+      const params = { limit: 100 };
+      if (this.networkBlockedOnly) params.blocked = true;
+
+      const requests = await this.rpc('network.list', params) || [];
+      if (requests.length === 0) {
+        this.networkRequestsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--text-secondary);">No network traffic recorded yet.</td></tr>';
+        return;
+      }
+
+      this.networkRequestsTbody.innerHTML = requests.map(r => `
+        <tr class="network-row ${r.blocked ? 'blocked' : ''}">
+          <td style="font-weight:600;">${this.escapeHtml(r.method)}</td>
+          <td>${r.blocked ? '<span style="color:#ef4444;font-weight:bold;">BLOCKED</span>' : r.status}</td>
+          <td title="${this.escapeHtml(r.url)}">${this.escapeHtml(r.url)}</td>
+          <td>${this.escapeHtml(r.resource_type)}</td>
+          <td>${r.size_bytes ? (r.size_bytes / 1024).toFixed(1) + ' KB' : '-'}</td>
+          <td>${r.duration_ms}ms</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('Fetch network log error:', e);
+    }
+  }
+
+  async clearNetworkLog() {
+    try {
+      await this.rpc('network.clear', {});
+      this.showToast('Network log cleared');
+      this.fetchNetworkLog();
+    } catch (e) {
+      console.error('Clear network log error:', e);
+    }
+  }
+
+  // Log simulated or CDP network request
+  async recordNetworkTraffic(url, method = 'GET', status = 200, resource_type = 'fetch', size_bytes = 1024, duration_ms = 40, blocked = false, blocked_reason = null) {
+    try {
+      await this.rpc('network.log', {
+        url,
+        method,
+        status,
+        resource_type,
+        size_bytes,
+        duration_ms,
+        blocked,
+        blocked_reason
+      });
     } catch (_) {}
   }
 

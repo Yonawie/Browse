@@ -43,8 +43,10 @@
       <div class="action-buttons">
         <span class="zoom-level-badge" id="zoom-level-badge" title="Zoom: Click to reset (Ctrl+ / Ctrl- / Ctrl+0)" style="cursor:pointer;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-secondary);user-select:none;">100%</span>
         <button class="btn-icon" id="btn-reader-mode" title="Distraction-Free Reader Mode">📖</button>
+        <button class="btn-icon" id="btn-reading-list" title="Reading List (Read It Later)">🔖</button>
         <button class="btn-icon" id="btn-add-bookmark" title="Bookmark current page">⭐</button>
         <button class="btn-icon" id="btn-toggle-downloads" title="Downloads">📥</button>
+        <button class="btn-icon" id="btn-network-monitor" title="Live Network Monitor">🌐</button>
         <button class="badge focus-badge" id="btn-adblock-shield" title="AdBlock & Tracker Shield Active" style="cursor:pointer;font-size:11px;">🛡️ Shield: On</button>
         <button class="btn-icon assistant-toggle" id="btn-toggle-sidebar" title="Toggle AI Sidebar">
           <span class="ai-sparkle">✦</span> AI Panel
@@ -599,6 +601,74 @@
         </div>
         <div class="onboarding-footer">
           <button class="btn-secondary" id="btn-dismiss-userscripts">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reading List Modal -->
+    <div id="reading-list-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 560px;">
+        <div class="onboarding-header">
+          <h2>🔖 Offline Reading List</h2>
+          <span class="subtitle">Save articles to read later offline. Filter unread or manage saved items.</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+            <div style="display:flex; gap:6px;">
+              <button class="btn-chip active" id="btn-reading-filter-all" style="font-size:11px;">All Items</button>
+              <button class="btn-chip" id="btn-reading-filter-unread" style="font-size:11px;">Unread Only</button>
+            </div>
+            <button class="btn-primary" id="btn-add-current-to-reading" style="font-size:11px; padding:4px 10px;">+ Save Active Page</button>
+          </div>
+          <div id="reading-list-items" style="display:flex; flex-direction:column; gap:8px; max-height:260px; overflow-y:auto;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-secondary" id="btn-dismiss-reading-list">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Network Traffic Monitor Modal -->
+    <div id="network-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 680px; width:90vw;">
+        <div class="onboarding-header">
+          <h2>🌐 Live Network Inspector</h2>
+          <span class="subtitle">Inspect real-time HTTP requests, payload sizes, durations, and Shield blocked trackers.</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; gap:12px; font-size:12px; align-items:center;" id="network-summary-bar">
+              <span>Total: <strong id="net-total-count">0</strong></span>
+              <span style="color:#ef4444;">Blocked: <strong id="net-blocked-count">0</strong></span>
+              <span>Data: <strong id="net-total-bytes">0 KB</strong></span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-secondary" id="btn-network-filter-blocked" style="font-size:11px; padding:3px 8px;">Shield Blocked Only</button>
+              <button class="btn-secondary" id="btn-clear-network-log" style="font-size:11px; padding:3px 8px;">Clear Log</button>
+            </div>
+          </div>
+          <div style="border:1px solid var(--border-color); border-radius:6px; max-height:260px; overflow-y:auto; background:var(--bg-secondary);">
+            <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border-color); color:var(--text-secondary); background:var(--bg-main);">
+                  <th style="padding:6px 8px;">Method</th>
+                  <th style="padding:6px 8px;">Status</th>
+                  <th style="padding:6px 8px;">URL</th>
+                  <th style="padding:6px 8px;">Type</th>
+                  <th style="padding:6px 8px;">Size</th>
+                  <th style="padding:6px 8px;">Time</th>
+                </tr>
+              </thead>
+              <tbody id="network-requests-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-secondary" id="btn-dismiss-network">Close</button>
         </div>
       </div>
     </div>

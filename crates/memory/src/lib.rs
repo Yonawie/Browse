@@ -28,8 +28,8 @@ pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};
 pub use search::{SearchFilters, SearchHit};
 pub use store::{
     auto_cluster_tab, MemoryStore, NewChunk, NewPageVersion, ProfileRecord, PromptTemplateRecord,
-    PruneCandidate, SavedSessionRecord, SitePermissionRecord, StoredPageVersion, TabGroupRecord,
-    TabRecord, TaskRecord, UserScriptRecord,
+    PruneCandidate, ReadingListRecord, SavedSessionRecord, SitePermissionRecord, StoredPageVersion,
+    TabGroupRecord, TabRecord, TaskRecord, UserScriptRecord,
 };
 
 pub const SCHEMA_SQL: &str = include_str!("../../../schema/memory.sql");

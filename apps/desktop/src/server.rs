@@ -53,6 +53,21 @@ pub struct TabInfo {
     pub muted: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkRequestEntry {
+    pub id: String,
+    pub url: String,
+    pub method: String,
+    pub status: u16,
+    pub resource_type: String,
+    pub size_bytes: u64,
+    pub duration_ms: u32,
+    pub blocked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
+    pub timestamp: i64,
+}
+
 #[derive(Clone)]
 pub struct ShellServerState {
     pub tabs: Arc<Mutex<Vec<TabInfo>>>,
@@ -60,6 +75,7 @@ pub struct ShellServerState {
     pub active_task_id: Arc<Mutex<Option<String>>>,
     pub focus_mode: Arc<Mutex<bool>>,
     pub current_selection: Arc<Mutex<Option<String>>>,
+    pub network_log: Arc<Mutex<Vec<NetworkRequestEntry>>>,
 }
 
 impl ShellServerState {
@@ -70,6 +86,7 @@ impl ShellServerState {
             active_task_id: Arc::new(Mutex::new(None)),
             focus_mode: Arc::new(Mutex::new(false)),
             current_selection: Arc::new(Mutex::new(None)),
+            network_log: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -869,6 +886,106 @@ pub async fn dispatch_rpc(
             let scripts = lock.get_scripts_for_domain(profile, domain).unwrap_or_default();
             Ok(json!(scripts))
         }
+        "reading_list.list" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let unread_only = req.params.get("unread_only").and_then(Value::as_bool).unwrap_or(false);
+            let lock = state.store.lock().unwrap();
+            let items = lock.list_reading_items(profile, unread_only).unwrap_or_default();
+            Ok(json!(items))
+        }
+        "reading_list.add" => {
+            let id = req.params.get("id").and_then(Value::as_str);
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let title = req.params.get("title").and_then(Value::as_str).unwrap_or(url);
+            let excerpt = req.params.get("excerpt").and_then(Value::as_str).unwrap_or("");
+            let reading_time_min = req.params.get("reading_time_min").and_then(Value::as_u64).unwrap_or(3) as u32;
+            let lock = state.store.lock().unwrap();
+            let rec = lock.add_reading_item(id, profile, url, title, excerpt, reading_time_min)
+                .map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(rec))
+        }
+        "reading_list.toggle_read" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let is_read = req.params.get("is_read").and_then(Value::as_bool).unwrap_or(true);
+            let lock = state.store.lock().unwrap();
+            let ok = lock.toggle_reading_item_read(id, is_read).unwrap_or(false);
+            Ok(json!({ "id": id, "is_read": is_read, "updated": ok }))
+        }
+        "reading_list.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let ok = lock.delete_reading_item(id).unwrap_or(false);
+            Ok(json!({ "id": id, "deleted": ok }))
+        }
+        "network.log" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let method = req.params.get("method").and_then(Value::as_str).unwrap_or("GET");
+            let status = req.params.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
+            let resource_type = req.params.get("resource_type").and_then(Value::as_str).unwrap_or("fetch");
+            let size_bytes = req.params.get("size_bytes").and_then(Value::as_u64).unwrap_or(0);
+            let duration_ms = req.params.get("duration_ms").and_then(Value::as_u64).unwrap_or(0) as u32;
+            let blocked = req.params.get("blocked").and_then(Value::as_bool).unwrap_or(false);
+            let blocked_reason = req.params.get("blocked_reason").and_then(Value::as_str).map(ToString::to_string);
+            let id = format!("req_{}", memory::now_ms());
+            let entry = NetworkRequestEntry {
+                id: id.clone(),
+                url: url.to_string(),
+                method: method.to_string(),
+                status,
+                resource_type: resource_type.to_string(),
+                size_bytes,
+                duration_ms,
+                blocked,
+                blocked_reason,
+                timestamp: memory::now_ms(),
+            };
+            let mut log = state.network_log.lock().unwrap();
+            log.push(entry.clone());
+            // Keep ring buffer max 500 items
+            if log.len() > 500 {
+                let excess = log.len() - 500;
+                log.drain(0..excess);
+            }
+            Ok(json!(entry))
+        }
+        "network.list" => {
+            let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize;
+            let filter_type = req.params.get("resource_type").and_then(Value::as_str);
+            let filter_blocked = req.params.get("blocked").and_then(Value::as_bool);
+            let log = state.network_log.lock().unwrap();
+            let mut filtered: Vec<NetworkRequestEntry> = log.iter().filter(|r| {
+                if let Some(ft) = filter_type {
+                    if r.resource_type != ft { return false; }
+                }
+                if let Some(fb) = filter_blocked {
+                    if r.blocked != fb { return false; }
+                }
+                true
+            }).cloned().collect();
+            filtered.reverse(); // Newest first
+            if filtered.len() > limit {
+                filtered.truncate(limit);
+            }
+            Ok(json!(filtered))
+        }
+        "network.clear" => {
+            let mut log = state.network_log.lock().unwrap();
+            let count = log.len();
+            log.clear();
+            Ok(json!({ "cleared": count }))
+        }
+        "network.summary" => {
+            let log = state.network_log.lock().unwrap();
+            let total_requests = log.len();
+            let blocked_requests = log.iter().filter(|r| r.blocked).count();
+            let total_bytes: u64 = log.iter().map(|r| r.size_bytes).sum();
+            Ok(json!({
+                "total_requests": total_requests,
+                "blocked_requests": blocked_requests,
+                "total_bytes": total_bytes,
+            }))
+        }
         "devtools.explain" => {
             if let Some(console_val) = req.params.get("console") {
                 let diag: ConsoleDiagnosticInput = serde_json::from_value(console_val.clone())
@@ -1293,10 +1410,12 @@ pub async fn dispatch_rpc(
                 ("restore session", "Restore Last Crash Session", "Restore tabs from previous session crash recovery", "action:restore_crash"),
                 ("zoom in", "Zoom In (Ctrl+Plus)", "Enlarge page display", "action:zoom_in"),
                 ("zoom out", "Zoom Out (Ctrl+Minus)", "Reduce page display", "action:zoom_out"),
-                ("zoom reset", "Reset Zoom (Ctrl+0)", "Reset page display to 100%", "action:zoom_reset"),
                 ("dedup", "Deduplicate Tabs", "Close duplicate tabs with same destination", "action:dedup_tabs"),
                 ("scripts", "User Scripts & Styles", "Manage custom JavaScript and CSS user styles", "action:userscripts"),
                 ("templates", "Prompt Templates", "Manage custom AI quick action prompt templates", "action:prompts"),
+                ("reading list", "Reading List", "View offline saved articles and read-it-later items", "action:reading_list"),
+                ("add reading list", "Save to Reading List", "Bookmark current page to offline reading list", "action:add_reading_list"),
+                ("network", "Live Network Monitor", "Inspect HTTP/HTTPS network requests, traffic and blocks", "action:network_monitor"),
             ];
             for (kw, title, subtitle, act) in actions {
                 if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
@@ -2689,6 +2808,156 @@ mod tests {
         };
         let res_script_del = dispatch_rpc(state, req_script_del).await.unwrap();
         assert_eq!(res_script_del["deleted"], true);
+    }
+
+    #[tokio::test]
+    async fn test_reading_list_rpc() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
+
+        // 1. Add reading list item
+        let req_add = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(150)),
+            method: "reading_list.add".to_string(),
+            params: json!({
+                "profile": "default",
+                "url": "https://news.ycombinator.com",
+                "title": "Hacker News",
+                "excerpt": "Technology and startup discussions",
+                "reading_time_min": 5
+            }),
+        };
+        let res_add = dispatch_rpc(state.clone(), req_add).await.unwrap();
+        let item_id = res_add["id"].as_str().unwrap().to_string();
+        assert_eq!(res_add["title"], "Hacker News");
+        assert_eq!(res_add["is_read"], false);
+
+        // 2. List reading list items
+        let req_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(151)),
+            method: "reading_list.list".to_string(),
+            params: json!({ "profile": "default" }),
+        };
+        let res_list = dispatch_rpc(state.clone(), req_list).await.unwrap();
+        let arr = res_list.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+
+        // 3. Mark read
+        let req_toggle = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(152)),
+            method: "reading_list.toggle_read".to_string(),
+            params: json!({ "id": item_id, "is_read": true }),
+        };
+        let res_toggle = dispatch_rpc(state.clone(), req_toggle).await.unwrap();
+        assert_eq!(res_toggle["updated"], true);
+
+        // 4. List unread only
+        let req_unread = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(153)),
+            method: "reading_list.list".to_string(),
+            params: json!({ "profile": "default", "unread_only": true }),
+        };
+        let res_unread = dispatch_rpc(state.clone(), req_unread).await.unwrap();
+        assert_eq!(res_unread.as_array().unwrap().len(), 0);
+
+        // 5. Delete
+        let req_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(154)),
+            method: "reading_list.delete".to_string(),
+            params: json!({ "id": item_id }),
+        };
+        let res_del = dispatch_rpc(state, req_del).await.unwrap();
+        assert_eq!(res_del["deleted"], true);
+    }
+
+    #[tokio::test]
+    async fn test_network_traffic_rpc() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
+
+        // 1. Log two requests (one normal, one blocked tracker)
+        let req_log1 = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(160)),
+            method: "network.log".to_string(),
+            params: json!({
+                "url": "https://example.com/api/data",
+                "method": "GET",
+                "status": 200,
+                "resource_type": "fetch",
+                "size_bytes": 1024,
+                "duration_ms": 45,
+                "blocked": false
+            }),
+        };
+        let res_log1 = dispatch_rpc(state.clone(), req_log1).await.unwrap();
+        assert_eq!(res_log1["status"], 200);
+
+        let req_log2 = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(161)),
+            method: "network.log".to_string(),
+            params: json!({
+                "url": "https://doubleclick.net/ad.js",
+                "method": "GET",
+                "status": 0,
+                "resource_type": "script",
+                "size_bytes": 0,
+                "duration_ms": 1,
+                "blocked": true,
+                "blocked_reason": "Ad/Tracker blocked by Shield"
+            }),
+        };
+        let res_log2 = dispatch_rpc(state.clone(), req_log2).await.unwrap();
+        assert_eq!(res_log2["blocked"], true);
+
+        // 2. Summary
+        let req_sum = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(162)),
+            method: "network.summary".to_string(),
+            params: json!({}),
+        };
+        let res_sum = dispatch_rpc(state.clone(), req_sum).await.unwrap();
+        assert_eq!(res_sum["total_requests"], 2);
+        assert_eq!(res_sum["blocked_requests"], 1);
+        assert_eq!(res_sum["total_bytes"], 1024);
+
+        // 3. Filter list
+        let req_blocked_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(163)),
+            method: "network.list".to_string(),
+            params: json!({ "blocked": true }),
+        };
+        let res_blocked = dispatch_rpc(state.clone(), req_blocked_list).await.unwrap();
+        let arr = res_blocked.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["blocked"], true);
+
+        // 4. Clear
+        let req_clear = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(164)),
+            method: "network.clear".to_string(),
+            params: json!({}),
+        };
+        let res_clear = dispatch_rpc(state.clone(), req_clear).await.unwrap();
+        assert_eq!(res_clear["cleared"], 2);
+
+        let req_sum_after = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(165)),
+            method: "network.summary".to_string(),
+            params: json!({}),
+        };
+        let res_sum_after = dispatch_rpc(state, req_sum_after).await.unwrap();
+        assert_eq!(res_sum_after["total_requests"], 0);
     }
 }
 

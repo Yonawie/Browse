@@ -81,6 +81,18 @@ pub struct PromptTemplateRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadingListRecord {
+    pub id: String,
+    pub profile_id: String,
+    pub url: String,
+    pub title: String,
+    pub excerpt: String,
+    pub reading_time_min: u32,
+    pub is_read: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserScriptRecord {
     pub id: String,
     pub profile_id: String,
@@ -183,7 +195,17 @@ impl MemoryStore {
                content         TEXT NOT NULL,
                enabled         BOOLEAN NOT NULL,
                created_at      INTEGER NOT NULL
-             );",
+             );
+              CREATE TABLE IF NOT EXISTS reading_list (
+                id               TEXT PRIMARY KEY,
+                profile_id       TEXT NOT NULL,
+                url              TEXT NOT NULL,
+                title            TEXT NOT NULL,
+                excerpt          TEXT NOT NULL,
+                reading_time_min INTEGER NOT NULL,
+                is_read          BOOLEAN NOT NULL,
+                created_at       INTEGER NOT NULL
+              );",
         )?;
 
         let count_templates: i64 = conn.query_row("SELECT COUNT(*) FROM prompt_templates", [], |r| r.get(0)).unwrap_or(0);
@@ -511,6 +533,74 @@ impl MemoryStore {
             false
         }).collect();
         Ok(matched)
+    }
+
+    // -- reading list -----------------------------------------------------
+
+    pub fn add_reading_item(
+        &self,
+        id: Option<&str>,
+        profile_id: &str,
+        url: &str,
+        title: &str,
+        excerpt: &str,
+        reading_time_min: u32,
+    ) -> Result<ReadingListRecord> {
+        let id = id.map(ToString::to_string).unwrap_or_else(new_id);
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO reading_list(id, profile_id, url, title, excerpt, reading_time_min, is_read, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)
+             ON CONFLICT(id) DO UPDATE SET title = excluded.title, excerpt = excluded.excerpt,
+             reading_time_min = excluded.reading_time_min",
+            params![id, profile_id, url, title, excerpt, reading_time_min, now],
+        )?;
+        Ok(ReadingListRecord {
+            id,
+            profile_id: profile_id.to_string(),
+            url: url.to_string(),
+            title: title.to_string(),
+            excerpt: excerpt.to_string(),
+            reading_time_min,
+            is_read: false,
+            created_at: now,
+        })
+    }
+
+    pub fn list_reading_items(&self, profile_id: &str, unread_only: bool) -> Result<Vec<ReadingListRecord>> {
+        let query = if unread_only {
+            "SELECT id, profile_id, url, title, excerpt, reading_time_min, is_read, created_at FROM reading_list WHERE profile_id = ?1 AND is_read = 0 ORDER BY created_at DESC"
+        } else {
+            "SELECT id, profile_id, url, title, excerpt, reading_time_min, is_read, created_at FROM reading_list WHERE profile_id = ?1 ORDER BY created_at DESC"
+        };
+        let mut stmt = self.conn.prepare(query)?;
+        let rows = stmt.query_map(params![profile_id], |r| {
+            Ok(ReadingListRecord {
+                id: r.get(0)?,
+                profile_id: r.get(1)?,
+                url: r.get(2)?,
+                title: r.get(3)?,
+                excerpt: r.get(4)?,
+                reading_time_min: r.get(5)?,
+                is_read: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn toggle_reading_item_read(&self, id: &str, is_read: bool) -> Result<bool> {
+        let count = self.conn.execute("UPDATE reading_list SET is_read = ?1 WHERE id = ?2", params![is_read, id])?;
+        Ok(count > 0)
+    }
+
+    pub fn delete_reading_item(&self, id: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM reading_list WHERE id = ?1", params![id])?;
+        Ok(count > 0)
     }
 
     pub fn create_task(&self, title: &str) -> Result<String> {
@@ -1459,6 +1549,54 @@ mod tests {
         // Delete
         assert!(s.delete_user_script(&script.id).unwrap());
         assert!(s.list_user_scripts(profile).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_reading_list_lifecycle() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let profile = "default";
+
+        // Add 2 items
+        let it1 = s.add_reading_item(
+            None,
+            profile,
+            "https://example.com/rust-async",
+            "Deep Dive into Rust Async",
+            "Understanding poll, wakers, and future states.",
+            7,
+        ).unwrap();
+        assert_eq!(it1.reading_time_min, 7);
+        assert!(!it1.is_read);
+
+        let it2 = s.add_reading_item(
+            None,
+            profile,
+            "https://example.com/zero-telemetry",
+            "Why Zero Telemetry Matters",
+            "Preserving local privacy by default.",
+            3,
+        ).unwrap();
+
+        // List all vs unread
+        let all = s.list_reading_items(profile, false).unwrap();
+        assert_eq!(all.len(), 2);
+        let unread = s.list_reading_items(profile, true).unwrap();
+        assert_eq!(unread.len(), 2);
+
+        // Mark it1 as read
+        assert!(s.toggle_reading_item_read(&it1.id, true).unwrap());
+        let unread_after = s.list_reading_items(profile, true).unwrap();
+        assert_eq!(unread_after.len(), 1);
+        assert_eq!(unread_after[0].id, it2.id);
+
+        let all_after = s.list_reading_items(profile, false).unwrap();
+        assert_eq!(all_after.len(), 2);
+
+        // Delete it2
+        assert!(s.delete_reading_item(&it2.id).unwrap());
+        let remaining = s.list_reading_items(profile, false).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, it1.id);
     }
 }
 
