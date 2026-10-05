@@ -113,6 +113,18 @@ class BrowseShell {
     this.historyList = document.getElementById('history-list');
     this.modelCatalogList = document.getElementById('model-catalog-list');
 
+    // Distraction-Free Reader Mode
+    this.btnReaderMode = document.getElementById('btn-reader-mode');
+    this.readerPane = document.getElementById('reader-pane');
+    this.readerBody = document.getElementById('reader-article-body');
+    this.btnCloseReader = document.getElementById('btn-close-reader');
+    this.btnReaderFontDec = document.getElementById('btn-reader-font-dec');
+    this.btnReaderFontInc = document.getElementById('btn-reader-font-inc');
+    this.readerFontSize = 17;
+
+    // Site Data Cleaner
+    this.btnForgetSite = document.getElementById('btn-forget-site');
+
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
     this.playwrightModal = document.getElementById('playwright-modal');
@@ -198,6 +210,31 @@ class BrowseShell {
     }
     if (this.btnClearHistory) {
       this.btnClearHistory.addEventListener('click', () => this.clearHistory());
+    }
+
+    // Reader Mode (📖)
+    if (this.btnReaderMode) {
+      this.btnReaderMode.addEventListener('click', () => this.toggleReaderMode());
+    }
+    if (this.btnCloseReader) {
+      this.btnCloseReader.addEventListener('click', () => this.toggleReaderMode());
+    }
+    if (this.btnReaderFontDec) {
+      this.btnReaderFontDec.addEventListener('click', () => {
+        this.readerFontSize = Math.max(12, this.readerFontSize - 2);
+        if (this.readerBody) this.readerBody.style.fontSize = `${this.readerFontSize}px`;
+      });
+    }
+    if (this.btnReaderFontInc) {
+      this.btnReaderFontInc.addEventListener('click', () => {
+        this.readerFontSize = Math.min(32, this.readerFontSize + 2);
+        if (this.readerBody) this.readerBody.style.fontSize = `${this.readerFontSize}px`;
+      });
+    }
+
+    // Site Data Cleaner (🗑️)
+    if (this.btnForgetSite) {
+      this.btnForgetSite.addEventListener('click', () => this.forgetCurrentSite());
     }
 
     // Selection Context (IN-4)
@@ -1259,6 +1296,57 @@ class BrowseShell {
     });
     if (res && this.playwrightCodePreview) {
       this.playwrightCodePreview.textContent = res.code;
+    }
+  }
+
+  async toggleReaderMode() {
+    if (!this.readerPane) return;
+    if (!this.readerPane.classList.contains('hidden')) {
+      this.readerPane.classList.add('hidden');
+      return;
+    }
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    const title = activeTab ? activeTab.title : '';
+
+    if (this.readerBody) {
+      this.readerBody.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);">Extracting distraction-free article...</div>';
+    }
+    this.readerPane.classList.remove('hidden');
+
+    try {
+      const res = await this.rpc('page.reader_mode', { url, title });
+      if (res && res.clean_html) {
+        this.readerBody.innerHTML = res.clean_html;
+      } else {
+        this.readerBody.innerHTML = '<p style="text-align:center;color:var(--text-secondary);margin-top:40px;">Unable to extract article text from this page.</p>';
+      }
+    } catch (e) {
+      if (this.readerBody) {
+        this.readerBody.innerHTML = `<p style="color:var(--danger-color);text-align:center;">Failed to load reader mode: ${this.escapeHtml(e.message || String(e))}</p>`;
+      }
+    }
+  }
+
+  async forgetCurrentSite() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    if (!url || url.startsWith('about:') || url.startsWith('browse:')) {
+      this.showToast('No active domain to forget');
+      return;
+    }
+    if (!confirm(`Are you sure you want to forget all data for this site? This completely purges history, cached snapshots, and memory for this domain.`)) {
+      return;
+    }
+    try {
+      const res = await this.rpc('page.forget_site', { url });
+      if (res) {
+        this.showToast(`Deleted ${res.deleted_pages} page record(s) for ${res.domain}`);
+        await this.fetchHistory();
+        await this.fetchMemoryStats();
+      }
+    } catch (e) {
+      this.showToast(`Error forgetting site: ${e.message || e}`);
     }
   }
 

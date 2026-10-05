@@ -39,6 +39,7 @@
       </div>
 
       <div class="action-buttons">
+        <button class="btn-icon" id="btn-reader-mode" title="Distraction-Free Reader Mode">📖</button>
         <button class="btn-icon" id="btn-add-bookmark" title="Bookmark current page">⭐</button>
         <button class="badge focus-badge" id="btn-adblock-shield" title="AdBlock & Tracker Shield Active" style="cursor:pointer;font-size:11px;">🛡️ Shield: On</button>
         <button class="btn-icon assistant-toggle" id="btn-toggle-sidebar" title="Toggle AI Sidebar">
@@ -58,7 +59,7 @@
     <!-- Main Workspace: Content + AI Sidebar -->
     <main class="workspace">
       <!-- Web View Container -->
-      <section class="viewport-pane" id="viewport-pane">
+      <section class="viewport-pane" id="viewport-pane" style="position:relative;">
         <div class="webview-header" id="webview-header">
           <span class="current-page-title" id="page-title">Welcome to Browse</span>
           <span class="profile-indicator" id="profile-indicator">Profile: User</span>
@@ -75,6 +76,21 @@
         <div class="webview-container" id="webview-frame-container">
           <!-- Active page content or iframe / placeholder -->
           <iframe id="web-frame" src="about:blank" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+        </div>
+
+        <!-- Distraction-Free Reader Overlay -->
+        <div class="reader-container hidden" id="reader-pane" style="position:absolute;inset:0;background:var(--bg-primary);color:var(--text-primary);overflow-y:auto;padding:32px 48px;z-index:25;">
+          <div class="reader-toolbar" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color);padding-bottom:12px;margin-bottom:24px;max-width:720px;margin-left:auto;margin-right:auto;">
+            <div style="display:flex;gap:10px;align-items:center;">
+              <span style="font-weight:600;font-size:13px;">📖 Reader Mode</span>
+              <button class="btn-secondary" id="btn-reader-font-dec" style="padding:2px 8px;font-size:11px;">A-</button>
+              <button class="btn-secondary" id="btn-reader-font-inc" style="padding:2px 8px;font-size:11px;">A+</button>
+            </div>
+            <button class="btn-secondary" id="btn-close-reader" style="padding:4px 12px;font-size:12px;">✕ Close Reader</button>
+          </div>
+          <div id="reader-article-body" style="max-width:720px;margin:0 auto;font-size:17px;line-height:1.75;font-family:Georgia, Cambria, serif;">
+            <!-- Article content rendered here -->
+          </div>
         </div>
       </section>
 
@@ -210,6 +226,14 @@
               <div id="diag-cause" style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;"></div>
               <div id="diag-fix" class="safe-tag" style="display:block;font-size:11px;margin-top:4px;line-height:1.4;"></div>
             </div>
+          </div>
+
+          <div class="safety-section">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0;">Site Data Cleaner</h4>
+              <button class="btn-danger" id="btn-forget-site" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Wipe all history, snapshots, and memory for this domain">🗑️ Forget This Site</button>
+            </div>
+            <p class="settings-hint" style="margin-top:4px;font-size:11px;">Completely purges all visits, cached snapshots, vector embeddings, and memory mentions for the current domain.</p>
           </div>
 
           <div class="safety-section">

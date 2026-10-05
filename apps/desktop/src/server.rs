@@ -17,7 +17,8 @@ use memory::{auto_cluster_tab, now_ms, MemoryStore, NewBookmark, SearchFilters, 
 use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
 use page_intelligence::{
     compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
-    inspect_page_privacy, inspect_url_phishing, AdBlockEngine, ConsoleDiagnosticInput, NetworkDiagnosticInput,
+    extract_reader_article, inspect_page_privacy, inspect_url_phishing, AdBlockEngine,
+    ConsoleDiagnosticInput, NetworkDiagnosticInput,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -507,6 +508,57 @@ pub async fn dispatch_rpc(
                 "phishing": phishing,
                 "dark_patterns": dark_patterns,
                 "privacy": privacy,
+            }))
+        }
+        "page.reader_mode" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let req_title = req.params.get("title").and_then(Value::as_str);
+            let req_text = req.params.get("text").and_then(Value::as_str);
+
+            let (title, text) = match (req_title, req_text) {
+                (Some(t), Some(txt)) => (t.to_string(), txt.to_string()),
+                _ => {
+                    let lock = state.store.lock().unwrap();
+                    let latest = lock.get_latest_version_for_url(url).unwrap_or(None);
+                    let t = req_title
+                        .map(ToString::to_string)
+                        .or_else(|| latest.as_ref().and_then(|v| v.title.clone()))
+                        .unwrap_or_default();
+                    let txt = req_text
+                        .map(ToString::to_string)
+                        .or_else(|| latest.as_ref().and_then(|v| v.main_text.clone()))
+                        .unwrap_or_default();
+                    (t, txt)
+                }
+            };
+
+            let article = extract_reader_article(url, &title, &text);
+            Ok(json!(article))
+        }
+        "page.forget_site" => {
+            let domain_opt = req.params.get("domain").and_then(Value::as_str);
+            let url_opt = req.params.get("url").and_then(Value::as_str);
+            let target_domain = if let Some(d) = domain_opt {
+                d.trim_start_matches("www.").to_string()
+            } else if let Some(u) = url_opt {
+                let lower = u.to_lowercase();
+                if let Some(pos) = lower.find("://") {
+                    let rest = &lower[pos + 3..];
+                    let host = rest.split(&['/', '?', '#', ':'][..]).next().unwrap_or("");
+                    host.trim_start_matches("www.").to_string()
+                } else {
+                    lower
+                }
+            } else {
+                return Err(json!({ "code": -32602, "message": "Missing domain or url parameter" }));
+            };
+
+            let lock = state.store.lock().unwrap();
+            let count = lock.forget_domain(&target_domain).unwrap_or(0);
+            Ok(json!({
+                "domain": target_domain,
+                "deleted_pages": count,
+                "status": "forgotten"
             }))
         }
         "devtools.explain" => {
@@ -1672,8 +1724,36 @@ mod tests {
             method: "history.delete".to_string(),
             params: json!({ "id": hist_id }),
         };
-        let res_hist_del = dispatch_rpc(state, req_hist_del).await.unwrap();
+        let res_hist_del = dispatch_rpc(state.clone(), req_hist_del).await.unwrap();
         assert_eq!(res_hist_del["deleted"], true);
+
+        // 11. Distraction-Free Reader Mode
+        let req_reader = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(106)),
+            method: "page.reader_mode".to_string(),
+            params: json!({
+                "url": "https://example.com/deep-dive",
+                "title": "Rust In Practice - Tech Weekly",
+                "text": "By Jane Expert\nPublished: October 2026\n\nDeep dive into memory layout in Rust.\n\nSubscribe to our newsletter!\n\nAll rights reserved."
+            }),
+        };
+        let res_reader = dispatch_rpc(state.clone(), req_reader).await.unwrap();
+        assert_eq!(res_reader["title"], "Rust In Practice");
+        assert_eq!(res_reader["byline"], "By Jane Expert");
+        assert!(res_reader["clean_text"].as_str().unwrap().contains("Deep dive into memory layout in Rust."));
+        assert!(!res_reader["clean_text"].as_str().unwrap().contains("Subscribe to our newsletter"));
+
+        // 12. Forget Site Data Cleaner
+        let req_forget = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(107)),
+            method: "page.forget_site".to_string(),
+            params: json!({ "url": "https://doc.rust-lang.org/std" }),
+        };
+        let res_forget = dispatch_rpc(state, req_forget).await.unwrap();
+        assert_eq!(res_forget["domain"], "doc.rust-lang.org");
+        assert_eq!(res_forget["status"], "forgotten");
     }
 }
 

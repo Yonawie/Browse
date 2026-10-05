@@ -38,10 +38,12 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Bookmarks Manager: хранение закладок, папки, теги, импорт/экспорт Netscape HTML (Chrome/Firefox) | готово | см. git log | 20 unit (memory) + RPC `bookmarks.*` + UI Bookmarks Bar |
 | Model Catalog & Downloader: каталог рекомендованных GGUF-моделей (Qwen/Llama/BGE), инспекция статуса | готово | см. git log | 36 unit (model-gateway) + RPC `models.*` + UI 1-Click Setup |
 | Browsing History Manager: история навигаций, поиск, аналитика доменов, удаление и очистка | готово | см. git log | 21 unit (memory) + RPC `history.*` + UI History Tab |
+| Distraction-Free Reader Mode: извлечение чистого текста статьи, расчет времени чтения, UI оверлей | готово | см. git log | 36 unit (page-intelligence) + RPC `page.reader_mode` + UI Reader View |
+| Site Data Cleaner ("Forget This Site"): каскадная очистка всех следов домена (история, память, чанки) | готово | см. git log | RPC `page.forget_site` + UI Forget Site Button |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **194 теста, 0 падений**
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **196 тестов, 0 падений**
 (agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 21,
-model-gateway 36 + 3 live, page-intelligence 35, policy 14, desktop 26); `cargo clippy --workspace --all-targets
+model-gateway 36 + 3 live, page-intelligence 36, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет
