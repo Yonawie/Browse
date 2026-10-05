@@ -49,9 +49,13 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Quick Search Bangs & Engine Switcher: быстрые бэнги (!gh, !yt, !w, !ddg, !g, !b, !c, !d, !r) и выбор поисковика | готово | см. git log | 14 unit (core-types) + UI Search Engine Settings |
 | Site Security & Permissions Inspector (🔒): инспекция TLS, происхождение, матрица разрешений сайта | готово | см. git log | 27 unit (memory) + RPC `permissions.*` + UI Security Modal |
 | Tab Sleeping & Memory Saver: усыпление неактивных вкладок для экономии RAM, пробуждение по клику | готово | см. git log | 26 unit (desktop) + RPC `tabs.discard`/`tabs.wake` + UI Sleeping Tabs |
+| Saved Sessions & Workspaces: сохранение и восстановление именованных сессий вкладок | готово | см. git log | 28 unit (memory) + RPC `sessions.*` + UI Sessions Modal |
+| Crash Recovery: непрерывное автосохранение активных вкладок, автоматический баннер восстановления | готово | см. git log | RPC `sessions.save_active`/`load_last_active` + UI Crash Alert |
+| Tab Audio Muting: переключение звука вкладки, динамические иконки 🔊/🔇, хоткей Ctrl+M | готово | см. git log | RPC `tabs.toggle_mute` + UI Tab Mute Buttons |
+| Page Zoom Controls: масштабирование страницы в веб-фрейме, хоткеи Ctrl++/Ctrl--/Ctrl+0, бейдж 100% | готово | см. git log | Хоткеи масштаба, кнопка сброса, визуальный zoom |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **209 тестов, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 27,
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **211 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 28,
 model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 

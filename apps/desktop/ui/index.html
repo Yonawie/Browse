@@ -17,6 +17,7 @@
       <div class="window-controls">
         <button class="btn-icon theme-toggle-btn" id="btn-toggle-theme" title="Toggle Light/Dark Theme">🌙</button>
         <button class="badge focus-badge" id="btn-palette" title="Command Palette (Ctrl+K / Ctrl+P)">⌘K Palette</button>
+        <button class="badge focus-badge" id="btn-sessions" title="Saved Sessions & Workspaces">💾 Sessions</button>
         <button class="badge focus-badge" id="btn-toggle-focus" title="Focus Mode: Filter tabs and defer notifications (AT-4)">🎯 Focus</button>
         <button class="badge focus-badge" id="btn-auto-group" title="Auto-Group Tabs by Task (AT-1)">✨ Group</button>
         <button class="badge prune-badge hidden" id="tab-prune-badge" title="Tab Hygiene: Archive Stale Tabs">🧹 Stale Tabs (<span id="prune-count">0</span>)</button>
@@ -40,6 +41,7 @@
       </div>
 
       <div class="action-buttons">
+        <span class="zoom-level-badge" id="zoom-level-badge" title="Zoom: Click to reset (Ctrl+ / Ctrl- / Ctrl+0)" style="cursor:pointer;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-secondary);user-select:none;">100%</span>
         <button class="btn-icon" id="btn-reader-mode" title="Distraction-Free Reader Mode">📖</button>
         <button class="btn-icon" id="btn-add-bookmark" title="Bookmark current page">⭐</button>
         <button class="btn-icon" id="btn-toggle-downloads" title="Downloads">📥</button>
@@ -536,6 +538,33 @@
         </div>
         <div class="onboarding-footer">
           <button class="btn-primary" id="btn-sec-close">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saved Sessions & Workspaces Modal -->
+    <div id="sessions-modal" class="onboarding-overlay hidden">
+      <div class="onboarding-card" style="max-width: 520px;">
+        <div class="onboarding-header">
+          <h2>💾 Saved Sessions & Workspaces</h2>
+          <span class="subtitle">Save current tabs as a named workspace or restore previously saved sessions.</span>
+        </div>
+        <div class="onboarding-body" style="padding: 12px 0;">
+          <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <input type="text" id="new-session-name" placeholder="Session name (e.g. Research, Daily Standup)..." style="flex:1; padding:6px 10px; background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; color:var(--text-main); font-size:12px;">
+            <button class="btn-primary" id="btn-save-current-session" style="font-size:12px; padding:6px 12px;">Save Tabs</button>
+          </div>
+          <div id="crash-recovery-alert" class="hidden" style="background:var(--bg-secondary); border:1px dashed var(--accent-color); border-radius:6px; padding:8px 12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:12px;">⚠️ Found tabs from previous session.</span>
+            <button class="btn-secondary" id="btn-restore-crash-tabs" style="font-size:11px; padding:3px 8px;">Restore Tabs</button>
+          </div>
+          <h4 style="margin:0 0 8px 0; font-size:12px; color:var(--text-secondary); text-transform:uppercase;">Saved Sessions</h4>
+          <div id="saved-sessions-list" style="display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+        <div class="onboarding-footer">
+          <button class="btn-secondary" id="btn-dismiss-sessions">Close</button>
         </div>
       </div>
     </div>

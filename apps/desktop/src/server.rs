@@ -49,6 +49,8 @@ pub struct TabInfo {
     pub task_id: Option<String>,
     #[serde(default)]
     pub discarded: bool,
+    #[serde(default)]
+    pub muted: bool,
 }
 
 #[derive(Clone)]
@@ -168,6 +170,7 @@ pub async fn dispatch_rpc(
                 pinned: false,
                 task_id,
                 discarded: false,
+                muted: false,
             };
             tabs.push(new_tab.clone());
             Ok(json!(new_tab))
@@ -395,6 +398,19 @@ pub async fn dispatch_rpc(
                 woken = true;
             }
             Ok(json!({ "id": tab_id, "woken": woken }))
+        }
+        "tabs.toggle_mute" => {
+            let tab_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let explicit_mute = req.params.get("muted").and_then(Value::as_bool);
+            let mut tabs = state.tabs.lock().unwrap();
+            let mut found = false;
+            let mut muted_state = false;
+            if let Some(t) = tabs.iter_mut().find(|t| t.id == tab_id) {
+                t.muted = explicit_mute.unwrap_or(!t.muted);
+                muted_state = t.muted;
+                found = true;
+            }
+            Ok(json!({ "id": tab_id, "found": found, "muted": muted_state }))
         }
         "tabs.prioritize" => {
             let req_task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string)
@@ -644,6 +660,89 @@ pub async fn dispatch_rpc(
             let lock = state.store.lock().unwrap();
             let list = lock.list_site_permissions().unwrap_or_default();
             Ok(json!(list))
+        }
+        "sessions.save" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let session_name = req.params.get("name")
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("Session {}", now_ms()));
+            let session_id = req.params.get("id").and_then(Value::as_str);
+            let tabs_json = {
+                let tabs = state.tabs.lock().unwrap();
+                serde_json::to_string(&*tabs).unwrap_or_else(|_| "[]".to_string())
+            };
+            let lock = state.store.lock().unwrap();
+            let rec = lock.save_session(session_id, profile, &session_name, &tabs_json)
+                .map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({
+                "id": rec.id,
+                "name": rec.name,
+                "profile_id": rec.profile_id,
+                "created_at": rec.created_at,
+                "status": "saved"
+            }))
+        }
+        "sessions.list" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let lock = state.store.lock().unwrap();
+            let sessions = lock.list_saved_sessions(profile).unwrap_or_default();
+            Ok(json!(sessions))
+        }
+        "sessions.restore" => {
+            let session_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let replace = req.params.get("replace").and_then(Value::as_bool).unwrap_or(false);
+            let lock = state.store.lock().unwrap();
+            let sess = lock.get_saved_session(session_id)
+                .map_err(|e| json!({"error": e.to_string()}))?
+                .ok_or_else(|| json!({"code": -32602, "message": "Session not found"}))?;
+            drop(lock);
+
+            let restored_tabs: Vec<TabInfo> = serde_json::from_str(&sess.tabs_json).unwrap_or_default();
+            let count = restored_tabs.len();
+            {
+                let mut tabs = state.tabs.lock().unwrap();
+                if replace {
+                    *tabs = restored_tabs;
+                } else {
+                    for mut t in restored_tabs {
+                        t.id = format!("tab-{}", tabs.len() + 1);
+                        t.active = false;
+                        tabs.push(t);
+                    }
+                }
+                if !tabs.is_empty() && !tabs.iter().any(|t| t.active) {
+                    tabs[0].active = true;
+                }
+            }
+            Ok(json!({ "id": session_id, "name": sess.name, "restored_tabs": count }))
+        }
+        "sessions.delete" => {
+            let session_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_saved_session(session_id).unwrap_or(false);
+            Ok(json!({ "id": session_id, "deleted": deleted }))
+        }
+        "sessions.save_active" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let tabs_json = {
+                let tabs = state.tabs.lock().unwrap();
+                serde_json::to_string(&*tabs).unwrap_or_else(|_| "[]".to_string())
+            };
+            let lock = state.store.lock().unwrap();
+            lock.save_active_tabs(profile, &tabs_json).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "saved": true }))
+        }
+        "sessions.load_last_active" => {
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("user");
+            let lock = state.store.lock().unwrap();
+            let loaded = lock.load_active_tabs(profile).unwrap_or(None);
+            if let Some(json_str) = loaded {
+                let tabs: Vec<TabInfo> = serde_json::from_str(&json_str).unwrap_or_default();
+                Ok(json!({ "has_session": true, "tabs": tabs }))
+            } else {
+                Ok(json!({ "has_session": false, "tabs": [] }))
+            }
         }
         "devtools.explain" => {
             if let Some(console_val) = req.params.get("console") {
@@ -1063,6 +1162,13 @@ pub async fn dispatch_rpc(
                 ("find", "Find in Page (Ctrl+F)", "Search current page content", "action:find"),
                 ("sleep", "Sleep Inactive Tabs", "Suspend background tabs to save memory", "action:sleep_tabs"),
                 ("permissions", "Site Security & Permissions", "View TLS encryption and site permissions", "action:security"),
+                ("mute", "Mute / Unmute Current Tab", "Toggle audio playback on active tab", "action:toggle_mute"),
+                ("save session", "Save Session", "Save current tabs as a named session workspace", "action:save_session"),
+                ("sessions", "Manage Saved Sessions", "View and restore saved sessions and workspaces", "action:sessions"),
+                ("restore session", "Restore Last Crash Session", "Restore tabs from previous session crash recovery", "action:restore_crash"),
+                ("zoom in", "Zoom In (Ctrl+Plus)", "Enlarge page display", "action:zoom_in"),
+                ("zoom out", "Zoom Out (Ctrl+Minus)", "Reduce page display", "action:zoom_out"),
+                ("zoom reset", "Reset Zoom (Ctrl+0)", "Reset page display to 100%", "action:zoom_reset"),
             ];
             for (kw, title, subtitle, act) in actions {
                 if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
@@ -1304,6 +1410,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             pinned: false,
             task_id: None,
             discarded: false,
+            muted: false,
         },
         TabInfo {
             id: "tab-2".to_string(),
@@ -1316,6 +1423,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             pinned: false,
             task_id: None,
             discarded: false,
+            muted: false,
         },
     ];
 
@@ -1382,6 +1490,7 @@ mod tests {
                 pinned: false,
                 task_id: None,
                 discarded: false,
+                muted: false,
             }])),
             store,
         );
@@ -1548,6 +1657,7 @@ mod tests {
                     pinned: false,
                     task_id: None,
                     discarded: false,
+                    muted: false,
                 },
                 TabInfo {
                     id: "tab-stale".to_string(),
@@ -1560,6 +1670,7 @@ mod tests {
                     pinned: false,
                     task_id: None,
                     discarded: false,
+                    muted: false,
                 },
                 TabInfo {
                     id: "tab-pinned".to_string(),
@@ -1572,6 +1683,7 @@ mod tests {
                     pinned: true,
                     task_id: None,
                     discarded: false,
+                    muted: false,
                 },
             ])),
             store,
@@ -1634,6 +1746,7 @@ mod tests {
                     pinned: false,
                     task_id: Some(task_id.clone()),
                     discarded: false,
+                    muted: false,
                 },
                 TabInfo {
                     id: "tab-music".to_string(),
@@ -1646,6 +1759,7 @@ mod tests {
                     pinned: false,
                     task_id: None,
                     discarded: false,
+                    muted: false,
                 },
                 TabInfo {
                     id: "tab-pinned".to_string(),
@@ -1658,6 +1772,7 @@ mod tests {
                     pinned: true,
                     task_id: None,
                     discarded: false,
+                    muted: false,
                 },
             ])),
             store,
@@ -2277,8 +2392,82 @@ mod tests {
             method: "permissions.clear".to_string(),
             params: json!({ "origin": "https://example.com" }),
         };
-        let res_perm_clear = dispatch_rpc(state, req_perm_clear).await.unwrap();
+        let res_perm_clear = dispatch_rpc(state.clone(), req_perm_clear).await.unwrap();
         assert_eq!(res_perm_clear["cleared"], true);
+
+        // 20. Tab Audio Muting
+        let req_mute = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(129)),
+            method: "tabs.toggle_mute".to_string(),
+            params: json!({ "id": created_tab_id }),
+        };
+        let res_mute = dispatch_rpc(state.clone(), req_mute).await.unwrap();
+        assert_eq!(res_mute["muted"], true);
+
+        let req_unmute = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(130)),
+            method: "tabs.toggle_mute".to_string(),
+            params: json!({ "id": created_tab_id, "muted": false }),
+        };
+        let res_unmute = dispatch_rpc(state.clone(), req_unmute).await.unwrap();
+        assert_eq!(res_unmute["muted"], false);
+
+        // 21. Saved Sessions & Crash Recovery
+        let req_sess_save = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(131)),
+            method: "sessions.save".to_string(),
+            params: json!({ "id": "test-session-1", "name": "Work Workspace" }),
+        };
+        let res_sess_save = dispatch_rpc(state.clone(), req_sess_save).await.unwrap();
+        assert_eq!(res_sess_save["status"], "saved");
+
+        let req_sess_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(132)),
+            method: "sessions.list".to_string(),
+            params: json!({}),
+        };
+        let res_sess_list = dispatch_rpc(state.clone(), req_sess_list).await.unwrap();
+        assert_eq!(res_sess_list.as_array().unwrap().len(), 1);
+
+        let req_sess_restore = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(133)),
+            method: "sessions.restore".to_string(),
+            params: json!({ "id": "test-session-1", "replace": false }),
+        };
+        let res_sess_restore = dispatch_rpc(state.clone(), req_sess_restore).await.unwrap();
+        assert!(res_sess_restore["restored_tabs"].as_u64().unwrap() >= 1);
+
+        let req_sess_crash_save = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(134)),
+            method: "sessions.save_active".to_string(),
+            params: json!({}),
+        };
+        let res_sess_crash_save = dispatch_rpc(state.clone(), req_sess_crash_save).await.unwrap();
+        assert_eq!(res_sess_crash_save["saved"], true);
+
+        let req_sess_crash_load = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(135)),
+            method: "sessions.load_last_active".to_string(),
+            params: json!({}),
+        };
+        let res_sess_crash_load = dispatch_rpc(state.clone(), req_sess_crash_load).await.unwrap();
+        assert_eq!(res_sess_crash_load["has_session"], true);
+
+        let req_sess_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(136)),
+            method: "sessions.delete".to_string(),
+            params: json!({ "id": "test-session-1" }),
+        };
+        let res_sess_del = dispatch_rpc(state, req_sess_del).await.unwrap();
+        assert_eq!(res_sess_del["deleted"], true);
     }
 }
 

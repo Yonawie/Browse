@@ -63,6 +63,15 @@ pub struct SitePermissionRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSessionRecord {
+    pub id: String,
+    pub profile_id: String,
+    pub name: String,
+    pub tabs_json: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredPageVersion {
     pub id: String,
     pub page_id: String,
@@ -129,6 +138,13 @@ impl MemoryStore {
                state      TEXT NOT NULL CHECK (state IN ('allow','block','ask')),
                updated_at INTEGER NOT NULL,
                PRIMARY KEY (origin, permission)
+             );
+             CREATE TABLE IF NOT EXISTS saved_sessions (
+               id         TEXT PRIMARY KEY,
+               profile_id TEXT NOT NULL,
+               name       TEXT NOT NULL,
+               tabs_json  TEXT NOT NULL,
+               created_at INTEGER NOT NULL
              );",
         )?;
         Ok(Self { conn, dims: 256 })
@@ -230,6 +246,87 @@ impl MemoryStore {
     pub fn clear_site_permissions(&self, origin: &str) -> Result<bool> {
         let count = self.conn.execute("DELETE FROM site_permissions WHERE origin = ?1", params![origin])?;
         Ok(count > 0)
+    }
+
+    // -- saved sessions & crash recovery ---------------------------------
+
+    pub fn save_session(&self, id: Option<&str>, profile_id: &str, name: &str, tabs_json: &str) -> Result<SavedSessionRecord> {
+        let id = id.map(ToString::to_string).unwrap_or_else(new_id);
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO saved_sessions(id, profile_id, name, tabs_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, tabs_json = excluded.tabs_json, created_at = excluded.created_at",
+            params![id, profile_id, name, tabs_json, now],
+        )?;
+        Ok(SavedSessionRecord {
+            id,
+            profile_id: profile_id.to_string(),
+            name: name.to_string(),
+            tabs_json: tabs_json.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_saved_sessions(&self, profile_id: &str) -> Result<Vec<SavedSessionRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, profile_id, name, tabs_json, created_at FROM saved_sessions WHERE profile_id = ?1 AND name != '__last_active__' ORDER BY created_at DESC, rowid DESC"
+        )?;
+        let rows = stmt.query_map(params![profile_id], |r| {
+            Ok(SavedSessionRecord {
+                id: r.get(0)?,
+                profile_id: r.get(1)?,
+                name: r.get(2)?,
+                tabs_json: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn get_saved_session(&self, id: &str) -> Result<Option<SavedSessionRecord>> {
+        let row = self.conn.query_row(
+            "SELECT id, profile_id, name, tabs_json, created_at FROM saved_sessions WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok(SavedSessionRecord {
+                    id: r.get(0)?,
+                    profile_id: r.get(1)?,
+                    name: r.get(2)?,
+                    tabs_json: r.get(3)?,
+                    created_at: r.get(4)?,
+                })
+            },
+        ).optional()?;
+        Ok(row)
+    }
+
+    pub fn delete_saved_session(&self, id: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM saved_sessions WHERE id = ?1", params![id])?;
+        Ok(count > 0)
+    }
+
+    pub fn save_active_tabs(&self, profile_id: &str, tabs_json: &str) -> Result<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO saved_sessions(id, profile_id, name, tabs_json, created_at) VALUES (?1, ?2, '__last_active__', ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET tabs_json = excluded.tabs_json, created_at = excluded.created_at",
+            params![format!("last_active_{profile_id}"), profile_id, tabs_json, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_active_tabs(&self, profile_id: &str) -> Result<Option<String>> {
+        let id = format!("last_active_{profile_id}");
+        let row = self.conn.query_row(
+            "SELECT tabs_json FROM saved_sessions WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, String>(0),
+        ).optional()?;
+        Ok(row)
     }
 
     pub fn create_task(&self, title: &str) -> Result<String> {
@@ -1101,6 +1198,34 @@ mod tests {
         let cleared = s.clear_site_permissions(origin).unwrap();
         assert!(cleared);
         assert!(s.get_site_permissions(origin).unwrap().is_empty());
+    }
+
+    #[test]
+    fn saved_sessions_and_crash_recovery() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let profile = "default";
+
+        // 1. Save and list sessions
+        let sess1 = s.save_session(None, profile, "Research Project", r#"[{"url":"https://github.com"}]"#).unwrap();
+        let sess2 = s.save_session(None, profile, "Shopping", r#"[{"url":"https://shop.com"}]"#).unwrap();
+
+        let list = s.list_saved_sessions(profile).unwrap();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().any(|s| s.name == "Shopping"));
+        assert!(list.iter().any(|s| s.name == "Research Project"));
+
+        let fetched = s.get_saved_session(&sess1.id).unwrap().unwrap();
+        assert_eq!(fetched.name, "Research Project");
+        assert_eq!(fetched.tabs_json, r#"[{"url":"https://github.com"}]"#);
+
+        let deleted = s.delete_saved_session(&sess2.id).unwrap();
+        assert!(deleted);
+        assert_eq!(s.list_saved_sessions(profile).unwrap().len(), 1);
+
+        // 2. Active tabs auto-save for crash recovery
+        s.save_active_tabs(profile, r#"[{"url":"https://crates.io"}]"#).unwrap();
+        let active_json = s.load_active_tabs(profile).unwrap().unwrap();
+        assert_eq!(active_json, r#"[{"url":"https://crates.io"}]"#);
     }
 }
 

@@ -28,7 +28,7 @@ pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};
 pub use search::{SearchFilters, SearchHit};
 pub use store::{
     auto_cluster_tab, MemoryStore, NewChunk, NewPageVersion, ProfileRecord, PruneCandidate,
-    SitePermissionRecord, StoredPageVersion, TabGroupRecord, TabRecord, TaskRecord,
+    SavedSessionRecord, SitePermissionRecord, StoredPageVersion, TabGroupRecord, TabRecord, TaskRecord,
 };
 
 pub const SCHEMA_SQL: &str = include_str!("../../../schema/memory.sql");

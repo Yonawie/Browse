@@ -24,6 +24,7 @@ class BrowseShell {
     this.fetchMemoryStats();
     this.checkPruneCandidates();
     this.updateProfileIndicator();
+    this.checkCrashRecovery();
   }
 
   initElements() {
@@ -195,6 +196,20 @@ class BrowseShell {
     this.btnSecClose = document.getElementById('btn-sec-close');
     this.btnSecClearData = document.getElementById('btn-sec-clear-data');
     this.btnSecAuditCookies = document.getElementById('btn-sec-audit-cookies');
+
+    // Page Zoom
+    this.zoomLevelBadge = document.getElementById('zoom-level-badge');
+    this.zoomLevel = 1.0;
+
+    // Saved Sessions & Workspaces
+    this.btnSessions = document.getElementById('btn-sessions');
+    this.sessionsModal = document.getElementById('sessions-modal');
+    this.newSessionName = document.getElementById('new-session-name');
+    this.btnSaveSession = document.getElementById('btn-save-current-session');
+    this.btnDismissSessions = document.getElementById('btn-dismiss-sessions');
+    this.savedSessionsList = document.getElementById('saved-sessions-list');
+    this.crashRecoveryAlert = document.getElementById('crash-recovery-alert');
+    this.btnRestoreCrashTabs = document.getElementById('btn-restore-crash-tabs');
   }
 
   initEvents() {
@@ -451,6 +466,25 @@ class BrowseShell {
       });
     }
 
+    // Sessions modal interactions
+    if (this.btnSessions) {
+      this.btnSessions.addEventListener('click', () => this.openSessionsModal());
+    }
+    if (this.btnDismissSessions) {
+      this.btnDismissSessions.addEventListener('click', () => this.closeSessionsModal());
+    }
+    if (this.btnSaveSession) {
+      this.btnSaveSession.addEventListener('click', () => this.saveCurrentSession());
+    }
+    if (this.btnRestoreCrashTabs) {
+      this.btnRestoreCrashTabs.addEventListener('click', () => this.restoreCrashSession());
+    }
+
+    // Zoom badge click
+    if (this.zoomLevelBadge) {
+      this.zoomLevelBadge.addEventListener('click', () => this.resetZoom());
+    }
+
     // Global keyboard shortcuts (Phase S9)
     window.addEventListener('keydown', (e) => {
       const isCmd = e.ctrlKey || e.metaKey;
@@ -474,6 +508,21 @@ class BrowseShell {
       } else if (isCmd && (e.key.toLowerCase() === 'k' || e.key.toLowerCase() === 'p')) {
         e.preventDefault();
         this.openCommandPalette();
+      } else if (isCmd && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        if (this.activeTabId) this.toggleMuteTab(this.activeTabId);
+      } else if (isCmd && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        this.openSessionsModal();
+      } else if (isCmd && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        this.zoomIn();
+      } else if (isCmd && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        this.zoomOut();
+      } else if (isCmd && e.key === '0') {
+        e.preventDefault();
+        this.resetZoom();
       } else if (isCmd && e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < this.tabs.length) {
@@ -492,6 +541,8 @@ class BrowseShell {
           this.respondConfirmation('rejected');
         } else if (this.paletteModal && !this.paletteModal.classList.contains('hidden')) {
           this.closeCommandPalette();
+        } else if (this.sessionsModal && !this.sessionsModal.classList.contains('hidden')) {
+          this.closeSessionsModal();
         } else if (this.profileModal && !this.profileModal.classList.contains('hidden')) {
           this.closeProfileModal();
         } else if (this.securityModal && !this.securityModal.classList.contains('hidden')) {
@@ -748,19 +799,29 @@ class BrowseShell {
       const badge = tab.profile === 'Agent' ? '<span class="tab-badge">Agent</span>' : '';
       const groupBadge = tab.group ? `<span class="tab-group-tag">${this.escapeHtml(tab.group)}</span>` : '';
       const taskBadge = tab.task_id ? `<span class="tab-task-tag">🎯 ${this.escapeHtml(tab.task_id)}</span>` : '';
+      const muteBtn = `<button class="tab-mute-btn" title="${tab.muted ? 'Unmute Tab (Ctrl+M)' : 'Mute Tab (Ctrl+M)'}">${tab.muted ? '🔇' : '🔊'}</button>`;
       el.innerHTML = `
         ${badge}
         ${groupBadge}
         ${taskBadge}
         <span class="tab-title">${this.escapeHtml(tab.title || tab.url)}</span>
+        ${muteBtn}
         <button class="tab-close" title="Close Tab">×</button>
       `;
 
       el.addEventListener('click', (e) => {
-        if (!e.target.classList.contains('tab-close')) {
+        if (!e.target.classList.contains('tab-close') && !e.target.classList.contains('tab-mute-btn')) {
           this.switchTab(tab.id);
         }
       });
+
+      const muteEl = el.querySelector('.tab-mute-btn');
+      if (muteEl) {
+        muteEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.toggleMuteTab(tab.id);
+        });
+      }
 
       el.querySelector('.tab-close').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -780,6 +841,7 @@ class BrowseShell {
         this.analyzeSafety(tab.url);
       }
     });
+    this.saveActiveSessionTabs();
   }
 
   async createTab(url, profile = 'User') {
@@ -1967,6 +2029,25 @@ class BrowseShell {
         case 'action:security':
           this.openSecurityModal();
           break;
+        case 'action:toggle_mute':
+          if (this.activeTabId) this.toggleMuteTab(this.activeTabId);
+          break;
+        case 'action:save_session':
+        case 'action:sessions':
+          this.openSessionsModal();
+          break;
+        case 'action:restore_crash':
+          this.restoreCrashSession();
+          break;
+        case 'action:zoom_in':
+          this.zoomIn();
+          break;
+        case 'action:zoom_out':
+          this.zoomOut();
+          break;
+        case 'action:zoom_reset':
+          this.resetZoom();
+          break;
         default:
           this.showToast(`Action executed: ${item.title}`);
       }
@@ -2161,6 +2242,188 @@ class BrowseShell {
     }
     this.renderTabs();
     this.showToast(`Put ${sleptCount} background tab(s) to sleep (RAM saved)`);
+  }
+
+  // Page Zoom Controls
+  zoomIn() {
+    this.zoomLevel = Math.min(2.5, Math.round((this.zoomLevel + 0.1) * 10) / 10);
+    this.applyZoom();
+  }
+
+  zoomOut() {
+    this.zoomLevel = Math.max(0.5, Math.round((this.zoomLevel - 0.1) * 10) / 10);
+    this.applyZoom();
+  }
+
+  resetZoom() {
+    this.zoomLevel = 1.0;
+    this.applyZoom();
+  }
+
+  applyZoom() {
+    if (this.zoomLevelBadge) {
+      this.zoomLevelBadge.textContent = `${Math.round(this.zoomLevel * 100)}%`;
+    }
+    if (this.webFrame) {
+      this.webFrame.style.transformOrigin = '0 0';
+      this.webFrame.style.transform = `scale(${this.zoomLevel})`;
+      this.webFrame.style.width = `${100 / this.zoomLevel}%`;
+      this.webFrame.style.height = `${100 / this.zoomLevel}%`;
+    }
+    this.showToast(`Zoom: ${Math.round(this.zoomLevel * 100)}%`);
+  }
+
+  // Tab Audio Muting
+  async toggleMuteTab(tabId) {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const res = await this.rpc('tabs.toggle_mute', { id: tabId });
+    if (res && res.found) {
+      tab.muted = res.muted;
+      this.renderTabs();
+      this.showToast(tab.muted ? `🔇 Muted audio on ${tab.title || tab.url}` : `🔊 Unmuted audio on ${tab.title || tab.url}`);
+    }
+  }
+
+  // Saved Sessions & Crash Recovery
+  saveActiveSessionTabs() {
+    clearTimeout(this._saveActiveTimer);
+    this._saveActiveTimer = setTimeout(() => {
+      this.rpc('sessions.save_active', { profile: this.currentProfile || 'user' });
+    }, 500);
+  }
+
+  openSessionsModal() {
+    if (!this.sessionsModal) return;
+    this.sessionsModal.classList.remove('hidden');
+    if (this.newSessionName) this.newSessionName.value = '';
+    this.loadSessionsList();
+    this.checkCrashRecoveryAlert();
+  }
+
+  closeSessionsModal() {
+    if (!this.sessionsModal) return;
+    this.sessionsModal.classList.add('hidden');
+  }
+
+  async loadSessionsList() {
+    if (!this.savedSessionsList) return;
+    try {
+      const sessions = await this.rpc('sessions.list', { profile: this.currentProfile || 'user' }) || [];
+      if (sessions.length === 0) {
+        this.savedSessionsList.innerHTML = '<div class="empty-hint" style="padding:12px;text-align:center;font-size:11px;">No saved sessions yet. Save your open tabs above.</div>';
+        return;
+      }
+      this.savedSessionsList.innerHTML = sessions.map(s => {
+        let tabCount = 0;
+        try {
+          const parsed = JSON.parse(s.tabs_json);
+          tabCount = Array.isArray(parsed) ? parsed.length : 0;
+        } catch (_) {}
+        const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
+        return `
+          <div class="session-item">
+            <div class="session-item-left">
+              <span class="session-item-title">💾 ${this.escapeHtml(s.name)}</span>
+              <span class="session-item-meta">${tabCount} tab(s) · ${dateStr}</span>
+            </div>
+            <div class="session-item-actions">
+              <button class="btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="browseShell.restoreSavedSession('${this.escapeHtml(s.id)}')">Restore</button>
+              <button class="btn-icon" style="font-size:12px;" title="Delete Session" onclick="browseShell.deleteSavedSession('${this.escapeHtml(s.id)}')">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Load sessions error:', e);
+    }
+  }
+
+  async saveCurrentSession() {
+    const name = this.newSessionName ? this.newSessionName.value.trim() : '';
+    const sessionName = name || `Session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    try {
+      const res = await this.rpc('sessions.save', {
+        name: sessionName,
+        profile: this.currentProfile || 'user'
+      });
+      if (res && res.status === 'saved') {
+        this.showToast(`Saved workspace: "${res.name}"`);
+        if (this.newSessionName) this.newSessionName.value = '';
+        this.loadSessionsList();
+      }
+    } catch (e) {
+      console.error('Save session error:', e);
+      this.showToast('Failed to save session');
+    }
+  }
+
+  async restoreSavedSession(sessionId) {
+    try {
+      const res = await this.rpc('sessions.restore', { id: sessionId, replace: false });
+      if (res && res.restored_tabs !== undefined) {
+        this.showToast(`Restored ${res.restored_tabs} tab(s) from "${res.name}"`);
+        this.closeSessionsModal();
+        await this.fetchTabs();
+      }
+    } catch (e) {
+      console.error('Restore session error:', e);
+      this.showToast('Failed to restore session');
+    }
+  }
+
+  async deleteSavedSession(sessionId) {
+    try {
+      const res = await this.rpc('sessions.delete', { id: sessionId });
+      if (res && res.deleted) {
+        this.showToast('Session deleted');
+        this.loadSessionsList();
+      }
+    } catch (e) {
+      console.error('Delete session error:', e);
+    }
+  }
+
+  async checkCrashRecovery() {
+    try {
+      const res = await this.rpc('sessions.load_last_active', { profile: this.currentProfile || 'user' });
+      if (res && res.has_session && Array.isArray(res.tabs) && res.tabs.length > 0) {
+        this._crashTabs = res.tabs;
+        if (this.tabs.length <= 1 && (!this.tabs[0] || this.tabs[0].url === 'https://example.com')) {
+          this.showToast(`⚠️ Previous session had ${res.tabs.length} open tab(s). Press Ctrl+S or click Sessions to restore.`);
+        }
+      }
+    } catch (e) {
+      console.warn('Crash recovery check failed:', e);
+    }
+  }
+
+  async checkCrashRecoveryAlert() {
+    if (!this.crashRecoveryAlert) return;
+    try {
+      const res = await this.rpc('sessions.load_last_active', { profile: this.currentProfile || 'user' });
+      if (res && res.has_session && Array.isArray(res.tabs) && res.tabs.length > 0) {
+        this._crashTabs = res.tabs;
+        this.crashRecoveryAlert.classList.remove('hidden');
+      } else {
+        this.crashRecoveryAlert.classList.add('hidden');
+      }
+    } catch (_) {
+      this.crashRecoveryAlert.classList.add('hidden');
+    }
+  }
+
+  async restoreCrashSession() {
+    if (this._crashTabs && this._crashTabs.length > 0) {
+      for (const t of this._crashTabs) {
+        await this.createTab(t.url || 'https://example.com', t.profile || 'User');
+      }
+      this.showToast(`Restored ${this._crashTabs.length} tab(s) from previous session`);
+      if (this.crashRecoveryAlert) this.crashRecoveryAlert.classList.add('hidden');
+      this.closeSessionsModal();
+    } else {
+      this.showToast('No crash session found');
+    }
   }
 
   escapeHtml(str) {
