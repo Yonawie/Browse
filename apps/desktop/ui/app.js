@@ -182,6 +182,9 @@ class BrowseShell {
     this.newProfileKind = document.getElementById('new-profile-kind');
     this.profilesList = document.getElementById('profiles-list');
     this.currentProfile = localStorage.getItem('browse_active_profile') || 'default';
+
+    // Search Engine Configuration
+    this.settingSearchEngine = document.getElementById('setting-search-engine');
   }
 
   initEvents() {
@@ -347,6 +350,16 @@ class BrowseShell {
       });
     }
 
+    // Search Engine Configuration
+    if (this.settingSearchEngine) {
+      const savedEngine = localStorage.getItem('browse_search_engine') || 'duckduckgo';
+      this.settingSearchEngine.value = savedEngine;
+      this.settingSearchEngine.addEventListener('change', () => {
+        localStorage.setItem('browse_search_engine', this.settingSearchEngine.value);
+        this.showToast(`Default search set to ${this.settingSearchEngine.options[this.settingSearchEngine.selectedIndex].text}`);
+      });
+    }
+
     // Selection Context (IN-4)
     if (this.btnAskSelection) {
       this.btnAskSelection.addEventListener('click', () => {
@@ -501,8 +514,14 @@ class BrowseShell {
           this.memoryInput.value = query;
           this.searchMemory();
         } else {
-          // Default: Search via DuckDuckGo
-          this.navigate('https://duckduckgo.com/?q=' + encodeURIComponent(query));
+          // Default: Search via configured search engine
+          const engine = localStorage.getItem('browse_search_engine') || 'duckduckgo';
+          let searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+          if (engine === 'google') searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+          else if (engine === 'brave') searchUrl = `https://search.brave.com/search?q=${encodeURIComponent(query)}`;
+          else if (engine === 'kagi') searchUrl = `https://kagi.com/search?q=${encodeURIComponent(query)}`;
+          else if (engine === 'startpage') searchUrl = `https://www.startpage.com/sp/search?query=${encodeURIComponent(query)}`;
+          this.navigate(searchUrl);
         }
       }
     });

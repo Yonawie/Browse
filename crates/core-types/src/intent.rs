@@ -71,6 +71,33 @@ pub struct OmniboxClassification {
     pub tab_action: Option<TabCommandAction>,
 }
 
+/// Parse quick search engine bangs (e.g. `!gh`, `!yt`, `!w`, `!ddg`, `!g`, `!c`, `!d`, `!r`).
+pub fn parse_search_bang(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if !trimmed.starts_with('!') {
+        return None;
+    }
+
+    let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
+    let bang = parts[0].to_lowercase();
+    let query = if parts.len() > 1 { parts[1].trim() } else { "" };
+    let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+
+    let target = match bang.as_str() {
+        "!gh" | "!github" => format!("https://github.com/search?q={encoded}"),
+        "!yt" | "!youtube" => format!("https://www.youtube.com/results?search_query={encoded}"),
+        "!w" | "!wiki" | "!wikipedia" => format!("https://en.wikipedia.org/wiki/Special:Search?search={encoded}"),
+        "!ddg" | "!duckduckgo" => format!("https://duckduckgo.com/?q={encoded}"),
+        "!g" | "!google" => format!("https://www.google.com/search?q={encoded}"),
+        "!b" | "!brave" => format!("https://search.brave.com/search?q={encoded}"),
+        "!c" | "!crates" => format!("https://crates.io/search?q={encoded}"),
+        "!d" | "!docs" => format!("https://docs.rs/releases/search?query={encoded}"),
+        "!r" | "!reddit" => format!("https://www.reddit.com/search/?q={encoded}"),
+        _ => return None,
+    };
+    Some(target)
+}
+
 /// Classify free-form omnibox input into an explicit intent.
 pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
     let trimmed = input.trim();
@@ -80,6 +107,17 @@ pub fn classify_omnibox_input(input: &str) -> OmniboxClassification {
             query: String::new(),
             confidence: 100,
             explanation: "Empty input defaults to search".into(),
+            tab_action: None,
+        };
+    }
+
+    // 0. Search engine quick bangs
+    if let Some(bang_url) = parse_search_bang(trimmed) {
+        return OmniboxClassification {
+            kind: OmniboxIntentKind::Url,
+            query: bang_url,
+            confidence: 99,
+            explanation: "Search engine bang navigation".into(),
             tab_action: None,
         };
     }
@@ -249,5 +287,38 @@ mod tests {
     fn classifies_general_search() {
         assert_eq!(classify_omnibox_input("weather forecast tomorrow").kind, OmniboxIntentKind::Search);
         assert_eq!(classify_omnibox_input("rust vs c++ memory safety").kind, OmniboxIntentKind::Search);
+    }
+
+    #[test]
+    fn parses_and_classifies_search_engine_bangs() {
+        assert_eq!(
+            parse_search_bang("!gh tokio rs"),
+            Some("https://github.com/search?q=tokio+rs".to_string())
+        );
+        assert_eq!(
+            parse_search_bang("!yt lofi beats"),
+            Some("https://www.youtube.com/results?search_query=lofi+beats".to_string())
+        );
+        assert_eq!(
+            parse_search_bang("!w rust programming"),
+            Some("https://en.wikipedia.org/wiki/Special:Search?search=rust+programming".to_string())
+        );
+        assert_eq!(
+            parse_search_bang("!ddg zero telemetry"),
+            Some("https://duckduckgo.com/?q=zero+telemetry".to_string())
+        );
+        assert_eq!(
+            parse_search_bang("!c serde"),
+            Some("https://crates.io/search?q=serde".to_string())
+        );
+        assert_eq!(
+            parse_search_bang("!d axum"),
+            Some("https://docs.rs/releases/search?query=axum".to_string())
+        );
+        assert_eq!(parse_search_bang("regular search without bang"), None);
+
+        let classified = classify_omnibox_input("!gh Yonawie/Browse");
+        assert_eq!(classified.kind, OmniboxIntentKind::Url);
+        assert_eq!(classified.query, "https://github.com/search?q=Yonawie%2FBrowse");
     }
 }

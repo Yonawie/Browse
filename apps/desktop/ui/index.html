@@ -335,6 +335,21 @@
           </div>
 
           <div class="settings-group">
+            <h4>Search Engine & Quick Bangs</h4>
+            <p class="settings-hint">Choose default search engine and use quick bangs (<code>!gh</code>, <code>!yt</code>, <code>!w</code>, <code>!ddg</code>, <code>!g</code>, <code>!b</code>, <code>!c</code>, <code>!d</code>, <code>!r</code>).</p>
+            <div class="setting-item">
+              <label>Default Engine:</label>
+              <select id="setting-search-engine" style="padding:4px 8px;background:var(--bg-main);border:1px solid var(--border-color);border-radius:4px;color:var(--text-main);font-size:12px;">
+                <option value="duckduckgo">DuckDuckGo (Privacy-First)</option>
+                <option value="brave">Brave Search (Independent Index)</option>
+                <option value="google">Google</option>
+                <option value="kagi">Kagi</option>
+                <option value="startpage">Startpage</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-group">
             <h4>Local Inference (llama.cpp)</h4>
             <p class="settings-hint">Zero data leaves your device. Models run as background sidecars.</p>
             <div class="setting-item">
