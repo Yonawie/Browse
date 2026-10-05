@@ -47,6 +47,8 @@ pub struct TabInfo {
     pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
+    #[serde(default)]
+    pub discarded: bool,
 }
 
 #[derive(Clone)]
@@ -165,6 +167,7 @@ pub async fn dispatch_rpc(
                 last_active_at: now_ms(),
                 pinned: false,
                 task_id,
+                discarded: false,
             };
             tabs.push(new_tab.clone());
             Ok(json!(new_tab))
@@ -371,6 +374,27 @@ pub async fn dispatch_rpc(
                 }
             }
             Ok(json!({ "status": "ok", "task_id": task_id }))
+        }
+        "tabs.discard" => {
+            let tab_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let mut tabs = state.tabs.lock().unwrap();
+            let mut discarded = false;
+            if let Some(t) = tabs.iter_mut().find(|t| t.id == tab_id) {
+                t.discarded = true;
+                discarded = true;
+            }
+            Ok(json!({ "id": tab_id, "discarded": discarded }))
+        }
+        "tabs.wake" => {
+            let tab_id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let mut tabs = state.tabs.lock().unwrap();
+            let mut woken = false;
+            if let Some(t) = tabs.iter_mut().find(|t| t.id == tab_id) {
+                t.discarded = false;
+                t.last_active_at = now_ms();
+                woken = true;
+            }
+            Ok(json!({ "id": tab_id, "woken": woken }))
         }
         "tabs.prioritize" => {
             let req_task_id = req.params.get("task_id").and_then(Value::as_str).map(ToString::to_string)
@@ -583,6 +607,43 @@ pub async fn dispatch_rpc(
                 "cleared": true,
                 "message": format!("Site storage cleared for origin {domain}")
             }))
+        }
+        "permissions.get" => {
+            let origin = req.params.get("origin").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let mut perms = lock.get_site_permissions(origin).unwrap_or_default();
+            perms.entry("geolocation".to_string()).or_insert_with(|| "ask".to_string());
+            perms.entry("camera".to_string()).or_insert_with(|| "block".to_string());
+            perms.entry("microphone".to_string()).or_insert_with(|| "block".to_string());
+            perms.entry("notifications".to_string()).or_insert_with(|| "ask".to_string());
+            perms.entry("clipboard".to_string()).or_insert_with(|| "ask".to_string());
+            perms.entry("javascript".to_string()).or_insert_with(|| "allow".to_string());
+            Ok(json!({
+                "origin": origin,
+                "permissions": perms
+            }))
+        }
+        "permissions.set" => {
+            let origin = req.params.get("origin").and_then(Value::as_str).unwrap_or("");
+            let permission = req.params.get("permission").and_then(Value::as_str).unwrap_or("");
+            let state_val = req.params.get("state").and_then(Value::as_str).unwrap_or("ask");
+            if origin.is_empty() || permission.is_empty() {
+                return Err(json!({ "code": -32602, "message": "Missing origin or permission" }));
+            }
+            let lock = state.store.lock().unwrap();
+            lock.set_site_permission(origin, permission, state_val).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "origin": origin, "permission": permission, "state": state_val }))
+        }
+        "permissions.clear" => {
+            let origin = req.params.get("origin").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let cleared = lock.clear_site_permissions(origin).unwrap_or(false);
+            Ok(json!({ "origin": origin, "cleared": cleared }))
+        }
+        "permissions.list" => {
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_site_permissions().unwrap_or_default();
+            Ok(json!(list))
         }
         "devtools.explain" => {
             if let Some(console_val) = req.params.get("console") {
@@ -1000,6 +1061,8 @@ pub async fn dispatch_rpc(
                 ("shield", "Toggle AdBlock Shield", "Ad and tracking protection", "action:shield"),
                 ("export vault", "Export Obsidian Vault", "Export memory knowledge graph", "action:export_vault"),
                 ("find", "Find in Page (Ctrl+F)", "Search current page content", "action:find"),
+                ("sleep", "Sleep Inactive Tabs", "Suspend background tabs to save memory", "action:sleep_tabs"),
+                ("permissions", "Site Security & Permissions", "View TLS encryption and site permissions", "action:security"),
             ];
             for (kw, title, subtitle, act) in actions {
                 if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
@@ -1240,6 +1303,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             last_active_at: now_ms(),
             pinned: false,
             task_id: None,
+            discarded: false,
         },
         TabInfo {
             id: "tab-2".to_string(),
@@ -1251,6 +1315,7 @@ pub async fn shell_command(args: &[String]) -> Result<(), Box<dyn std::error::Er
             last_active_at: now_ms(),
             pinned: false,
             task_id: None,
+            discarded: false,
         },
     ];
 
@@ -1316,6 +1381,7 @@ mod tests {
                 last_active_at: now_ms(),
                 pinned: false,
                 task_id: None,
+                discarded: false,
             }])),
             store,
         );
@@ -1481,6 +1547,7 @@ mod tests {
                     last_active_at: now,
                     pinned: false,
                     task_id: None,
+                    discarded: false,
                 },
                 TabInfo {
                     id: "tab-stale".to_string(),
@@ -1492,6 +1559,7 @@ mod tests {
                     last_active_at: four_days_ago,
                     pinned: false,
                     task_id: None,
+                    discarded: false,
                 },
                 TabInfo {
                     id: "tab-pinned".to_string(),
@@ -1503,6 +1571,7 @@ mod tests {
                     last_active_at: four_days_ago,
                     pinned: true,
                     task_id: None,
+                    discarded: false,
                 },
             ])),
             store,
@@ -1564,6 +1633,7 @@ mod tests {
                     last_active_at: now_ms(),
                     pinned: false,
                     task_id: Some(task_id.clone()),
+                    discarded: false,
                 },
                 TabInfo {
                     id: "tab-music".to_string(),
@@ -1575,6 +1645,7 @@ mod tests {
                     last_active_at: now_ms(),
                     pinned: false,
                     task_id: None,
+                    discarded: false,
                 },
                 TabInfo {
                     id: "tab-pinned".to_string(),
@@ -1586,6 +1657,7 @@ mod tests {
                     last_active_at: now_ms(),
                     pinned: true,
                     task_id: None,
+                    discarded: false,
                 },
             ])),
             store,
@@ -2134,9 +2206,79 @@ mod tests {
             method: "palette.search".to_string(),
             params: json!({ "query": "" }),
         };
-        let res_palette_all = dispatch_rpc(state, req_palette_all).await.unwrap();
+        let res_palette_all = dispatch_rpc(state.clone(), req_palette_all).await.unwrap();
         let all_items = res_palette_all.as_array().unwrap();
         assert!(!all_items.is_empty());
+
+        // 18. Tab Sleep / Discard & Wake Lifecycle
+        let req_tab_create = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(1221)),
+            method: "tabs.create".to_string(),
+            params: json!({ "url": "https://example.com/sleepy", "profile": "default" }),
+        };
+        let res_tab_create = dispatch_rpc(state.clone(), req_tab_create).await.unwrap();
+        let created_tab_id = res_tab_create["id"].as_str().unwrap();
+
+        let req_tab_discard = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(123)),
+            method: "tabs.discard".to_string(),
+            params: json!({ "id": created_tab_id }),
+        };
+        let res_tab_discard = dispatch_rpc(state.clone(), req_tab_discard).await.unwrap();
+        assert_eq!(res_tab_discard["discarded"], true);
+
+        let req_tab_wake = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(124)),
+            method: "tabs.wake".to_string(),
+            params: json!({ "id": created_tab_id }),
+        };
+        let res_tab_wake = dispatch_rpc(state.clone(), req_tab_wake).await.unwrap();
+        assert_eq!(res_tab_wake["woken"], true);
+
+        // 19. Site Permissions Management
+        let req_perm_set = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(125)),
+            method: "permissions.set".to_string(),
+            params: json!({
+                "origin": "https://example.com",
+                "permission": "geolocation",
+                "state": "allow"
+            }),
+        };
+        let res_perm_set = dispatch_rpc(state.clone(), req_perm_set).await.unwrap();
+        assert_eq!(res_perm_set["state"], "allow");
+
+        let req_perm_get = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(126)),
+            method: "permissions.get".to_string(),
+            params: json!({ "origin": "https://example.com" }),
+        };
+        let res_perm_get = dispatch_rpc(state.clone(), req_perm_get).await.unwrap();
+        assert_eq!(res_perm_get["permissions"]["geolocation"], "allow");
+        assert_eq!(res_perm_get["permissions"]["camera"], "block"); // default
+
+        let req_perm_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(127)),
+            method: "permissions.list".to_string(),
+            params: json!({}),
+        };
+        let res_perm_list = dispatch_rpc(state.clone(), req_perm_list).await.unwrap();
+        assert!(!res_perm_list.as_array().unwrap().is_empty());
+
+        let req_perm_clear = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(128)),
+            method: "permissions.clear".to_string(),
+            params: json!({ "origin": "https://example.com" }),
+        };
+        let res_perm_clear = dispatch_rpc(state, req_perm_clear).await.unwrap();
+        assert_eq!(res_perm_clear["cleared"], true);
     }
 }
 

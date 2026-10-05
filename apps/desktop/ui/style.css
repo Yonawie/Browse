@@ -1218,4 +1218,46 @@ body.light-theme {
   background: rgba(99, 102, 241, 0.1);
 }
 
+/* Sleeping / Discarded Tabs */
+.tab.sleeping {
+  opacity: 0.65;
+  filter: grayscale(20%);
+}
+
+.tab.sleeping .tab-title::before {
+  content: '💤 ';
+  font-size: 11px;
+}
+
+/* Site Permissions Matrix */
+.perm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.perm-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.perm-select {
+  padding: 3px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-main);
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+}
+
+
 

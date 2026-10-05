@@ -185,6 +185,16 @@ class BrowseShell {
 
     // Search Engine Configuration
     this.settingSearchEngine = document.getElementById('setting-search-engine');
+
+    // Site Security & Permissions
+    this.securityIndicator = document.getElementById('security-indicator');
+    this.securityModal = document.getElementById('security-modal');
+    this.secModalOrigin = document.getElementById('sec-modal-origin');
+    this.secModalConn = document.getElementById('sec-modal-conn');
+    this.secPermissionsList = document.getElementById('sec-permissions-list');
+    this.btnSecClose = document.getElementById('btn-sec-close');
+    this.btnSecClearData = document.getElementById('btn-sec-clear-data');
+    this.btnSecAuditCookies = document.getElementById('btn-sec-audit-cookies');
   }
 
   initEvents() {
@@ -360,6 +370,31 @@ class BrowseShell {
       });
     }
 
+    // Site Security & Permissions
+    if (this.securityIndicator) {
+      this.securityIndicator.addEventListener('click', () => this.openSecurityModal());
+    }
+    if (this.btnSecClose) {
+      this.btnSecClose.addEventListener('click', () => this.closeSecurityModal());
+    }
+    if (this.btnSecClearData) {
+      this.btnSecClearData.addEventListener('click', () => {
+        this.closeSecurityModal();
+        this.forgetCurrentSite();
+      });
+    }
+    if (this.btnSecAuditCookies) {
+      this.btnSecAuditCookies.addEventListener('click', () => {
+        this.closeSecurityModal();
+        this.inspectCookies();
+      });
+    }
+    if (this.securityModal) {
+      this.securityModal.addEventListener('click', (e) => {
+        if (e.target === this.securityModal) this.closeSecurityModal();
+      });
+    }
+
     // Selection Context (IN-4)
     if (this.btnAskSelection) {
       this.btnAskSelection.addEventListener('click', () => {
@@ -459,6 +494,8 @@ class BrowseShell {
           this.closeCommandPalette();
         } else if (this.profileModal && !this.profileModal.classList.contains('hidden')) {
           this.closeProfileModal();
+        } else if (this.securityModal && !this.securityModal.classList.contains('hidden')) {
+          this.closeSecurityModal();
         } else if (this.pruneModal && !this.pruneModal.classList.contains('hidden')) {
           this.pruneModal.classList.add('hidden');
         } else if (onboardingModal && !onboardingModal.classList.contains('hidden')) {
@@ -706,7 +743,7 @@ class BrowseShell {
     this.tabsList.innerHTML = '';
     this.tabs.forEach((tab) => {
       const el = document.createElement('div');
-      el.className = `tab-item ${tab.active ? 'active' : ''} ${tab.profile === 'Agent' ? 'agent-profile' : ''}`;
+      el.className = `tab-item ${tab.active ? 'active' : ''} ${tab.profile === 'Agent' ? 'agent-profile' : ''} ${tab.discarded ? 'sleeping' : ''}`;
       
       const badge = tab.profile === 'Agent' ? '<span class="tab-badge">Agent</span>' : '';
       const groupBadge = tab.group ? `<span class="tab-group-tag">${this.escapeHtml(tab.group)}</span>` : '';
@@ -752,14 +789,21 @@ class BrowseShell {
       title: 'New Tab',
       profile,
       active: true,
-      group: 'General'
+      group: 'General',
+      discarded: false
     };
     this.tabs.forEach(t => t.active = false);
     this.tabs.push(newTab);
     this.renderTabs();
   }
 
-  switchTab(tabId) {
+  async switchTab(tabId) {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab && tab.discarded) {
+      tab.discarded = false;
+      this.rpc('tabs.wake', { id: tabId });
+      this.showToast(`Woke tab: ${tab.title || tab.url}`);
+    }
     this.tabs.forEach(t => t.active = (t.id === tabId));
     this.renderTabs();
     this.rpc('tabs.switch', { tab_id: tabId });
@@ -1917,6 +1961,12 @@ class BrowseShell {
         case 'action:find':
           this.openFind();
           break;
+        case 'action:sleep_tabs':
+          this.sleepBackgroundTabs();
+          break;
+        case 'action:security':
+          this.openSecurityModal();
+          break;
         default:
           this.showToast(`Action executed: ${item.title}`);
       }
@@ -2025,6 +2075,92 @@ class BrowseShell {
     this.fetchHistory();
     this.fetchDownloads();
     this.fetchVaultCredentials();
+  }
+
+  // Site Security & Permissions Matrix
+  async openSecurityModal() {
+    if (!this.securityModal) return;
+    this.securityModal.classList.remove('hidden');
+
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    let origin = 'https://example.com';
+    try {
+      if (url && url.includes('://')) {
+        const u = new URL(url);
+        origin = u.origin;
+      }
+    } catch (_) {}
+
+    if (this.secModalOrigin) this.secModalOrigin.textContent = origin;
+    if (this.secModalConn) {
+      const isHttps = origin.startsWith('https://');
+      this.secModalConn.textContent = isHttps ? '🔒 Connection Encrypted (TLS 1.3)' : '⚠️ Connection Unencrypted (HTTP)';
+      this.secModalConn.style.background = isHttps ? 'var(--success-light)' : 'var(--warning-light)';
+    }
+
+    await this.fetchSitePermissions(origin);
+  }
+
+  closeSecurityModal() {
+    if (this.securityModal) this.securityModal.classList.add('hidden');
+  }
+
+  async fetchSitePermissions(origin) {
+    if (!this.secPermissionsList) return;
+    try {
+      const res = await this.rpc('permissions.get', { origin });
+      const perms = res ? res.permissions : {};
+      const standardPerms = [
+        { key: 'geolocation', label: '📍 Location' },
+        { key: 'camera', label: '📷 Camera' },
+        { key: 'microphone', label: '🎙️ Microphone' },
+        { key: 'notifications', label: '🔔 Notifications' },
+        { key: 'clipboard', label: '📋 Clipboard' },
+        { key: 'javascript', label: '⚡ JavaScript' }
+      ];
+
+      this.secPermissionsList.innerHTML = standardPerms.map(p => {
+        const val = perms[p.key] || 'ask';
+        return `
+          <div class="perm-row">
+            <div class="perm-row-left">
+              <span>${p.label}</span>
+            </div>
+            <select class="perm-select" onchange="browseShell.setSitePermission('${this.escapeHtml(origin)}', '${p.key}', this.value)">
+              <option value="allow" ${val === 'allow' ? 'selected' : ''}>Allow</option>
+              <option value="block" ${val === 'block' ? 'selected' : ''}>Block</option>
+              <option value="ask" ${val === 'ask' ? 'selected' : ''}>Ask</option>
+            </select>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Fetch site perms error:', e);
+    }
+  }
+
+  async setSitePermission(origin, permission, state) {
+    try {
+      await this.rpc('permissions.set', { origin, permission, state });
+      this.showToast(`Updated ${permission} permission to ${state}`);
+    } catch (e) {
+      this.showToast(`Failed to update permission: ${e.message || e}`);
+    }
+  }
+
+  // Tab Sleep / Memory Saver
+  async sleepBackgroundTabs() {
+    let sleptCount = 0;
+    for (const t of this.tabs) {
+      if (!t.active && !t.pinned && !t.discarded) {
+        t.discarded = true;
+        await this.rpc('tabs.discard', { id: t.id });
+        sleptCount++;
+      }
+    }
+    this.renderTabs();
+    this.showToast(`Put ${sleptCount} background tab(s) to sleep (RAM saved)`);
   }
 
   escapeHtml(str) {

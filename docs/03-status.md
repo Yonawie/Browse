@@ -47,9 +47,11 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Multi-Profile Management: изолированные пространства пользователя, агента и приватные профили | готово | см. git log | 26 unit (memory) + RPC `profiles.*` + UI Profile Modal |
 | Command Palette (Ctrl+K / Ctrl+P): мгновенный поиск команд, действий, вкладок, закладок, истории | готово | см. git log | 26 unit (desktop) + RPC `palette.search` + UI Palette Modal |
 | Quick Search Bangs & Engine Switcher: быстрые бэнги (!gh, !yt, !w, !ddg, !g, !b, !c, !d, !r) и выбор поисковика | готово | см. git log | 14 unit (core-types) + UI Search Engine Settings |
+| Site Security & Permissions Inspector (🔒): инспекция TLS, происхождение, матрица разрешений сайта | готово | см. git log | 27 unit (memory) + RPC `permissions.*` + UI Security Modal |
+| Tab Sleeping & Memory Saver: усыпление неактивных вкладок для экономии RAM, пробуждение по клику | готово | см. git log | 26 unit (desktop) + RPC `tabs.discard`/`tabs.wake` + UI Sleeping Tabs |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **208 тестов, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 26,
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **209 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 27,
 model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 

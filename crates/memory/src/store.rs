@@ -2,6 +2,7 @@ use crate::{new_id, now_ms, MemoryError, Result, SCHEMA_SQL, SCHEMA_VERSION};
 use core_types::{Origin, PageKind, Provenance, Sensitivity};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +52,14 @@ pub struct ProfileRecord {
     pub kind: String,
     pub name: String,
     pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitePermissionRecord {
+    pub origin: String,
+    pub permission: String,
+    pub state: String,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +122,15 @@ impl MemoryStore {
                 params![SCHEMA_VERSION, now_ms()],
             )?;
         }
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS site_permissions (
+               origin     TEXT NOT NULL,
+               permission TEXT NOT NULL,
+               state      TEXT NOT NULL CHECK (state IN ('allow','block','ask')),
+               updated_at INTEGER NOT NULL,
+               PRIMARY KEY (origin, permission)
+             );",
+        )?;
         Ok(Self { conn, dims: 256 })
     }
 
@@ -164,6 +182,53 @@ impl MemoryStore {
 
     pub fn delete_profile(&self, id: &str) -> Result<bool> {
         let count = self.conn.execute("DELETE FROM profiles WHERE id = ?1", params![id])?;
+        Ok(count > 0)
+    }
+
+    // -- site permissions -------------------------------------------------
+
+    pub fn get_site_permissions(&self, origin: &str) -> Result<HashMap<String, String>> {
+        let mut stmt = self.conn.prepare("SELECT permission, state FROM site_permissions WHERE origin = ?1")?;
+        let rows = stmt.query_map(params![origin], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut map = HashMap::new();
+        for r in rows {
+            let (k, v) = r?;
+            map.insert(k, v);
+        }
+        Ok(map)
+    }
+
+    pub fn set_site_permission(&self, origin: &str, permission: &str, state: &str) -> Result<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT INTO site_permissions(origin, permission, state, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(origin, permission) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at",
+            params![origin, permission, state, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_site_permissions(&self) -> Result<Vec<SitePermissionRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT origin, permission, state, updated_at FROM site_permissions ORDER BY origin ASC, permission ASC"
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(SitePermissionRecord {
+                origin: r.get(0)?,
+                permission: r.get(1)?,
+                state: r.get(2)?,
+                updated_at: r.get(3)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn clear_site_permissions(&self, origin: &str) -> Result<bool> {
+        let count = self.conn.execute("DELETE FROM site_permissions WHERE origin = ?1", params![origin])?;
         Ok(count > 0)
     }
 
@@ -1010,6 +1075,32 @@ mod tests {
         let list2 = s.list_profiles().unwrap();
         assert_eq!(list2.len(), 1);
         assert_eq!(list2[0].id, p2.id);
+    }
+
+    #[test]
+    fn site_permissions_setting_and_retrieval() {
+        let s = MemoryStore::open_in_memory().unwrap();
+        let origin = "https://maps.google.com";
+
+        s.set_site_permission(origin, "geolocation", "allow").unwrap();
+        s.set_site_permission(origin, "camera", "block").unwrap();
+
+        let perms = s.get_site_permissions(origin).unwrap();
+        assert_eq!(perms.get("geolocation").map(String::as_str), Some("allow"));
+        assert_eq!(perms.get("camera").map(String::as_str), Some("block"));
+        assert_eq!(perms.get("microphone"), None);
+
+        // Update existing permission
+        s.set_site_permission(origin, "geolocation", "block").unwrap();
+        let perms_updated = s.get_site_permissions(origin).unwrap();
+        assert_eq!(perms_updated.get("geolocation").map(String::as_str), Some("block"));
+
+        let all = s.list_site_permissions().unwrap();
+        assert_eq!(all.len(), 2);
+
+        let cleared = s.clear_site_permissions(origin).unwrap();
+        assert!(cleared);
+        assert!(s.get_site_permissions(origin).unwrap().is_empty());
     }
 }
 
