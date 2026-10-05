@@ -86,6 +86,7 @@
           <button class="sidebar-tab" data-tab="agent">Agent Tasks</button>
           <button class="sidebar-tab" data-tab="safety">Safety & Privacy</button>
           <button class="sidebar-tab" data-tab="memory">Memory & Search</button>
+          <button class="sidebar-tab" data-tab="history">History</button>
           <button class="sidebar-tab" data-tab="settings">AI Settings</button>
         </nav>
 
@@ -249,8 +250,27 @@
           </div>
         </div>
 
-        <!-- Tab 4: AI Settings & Routing -->
+        <!-- Tab 4: Browsing History -->
+        <div class="sidebar-content" id="tab-history">
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <input type="text" id="history-search-input" placeholder="Search browsing history..." style="flex:1;padding:6px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:12px;">
+            <button class="btn-danger" id="btn-clear-history" style="font-size:11px;padding:4px 8px;cursor:pointer;" title="Clear history">Clear</button>
+          </div>
+          <div id="history-list" class="memory-results" style="display:flex;flex-direction:column;gap:6px;">
+            <span class="empty-hint" style="font-size:12px;">No history recorded yet.</span>
+          </div>
+        </div>
+
+        <!-- Tab 5: AI Settings & Routing -->
         <div class="sidebar-content" id="tab-settings">
+          <div class="settings-group">
+            <h4>Curated Local Models (1-Click Setup)</h4>
+            <p class="settings-hint">Zero telemetry GGUF models running privately on your device.</p>
+            <div id="model-catalog-list" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+              <span class="empty-hint" style="font-size:12px;">Loading model catalog...</span>
+            </div>
+          </div>
+
           <div class="settings-group">
             <h4>Local Inference (llama.cpp)</h4>
             <p class="settings-hint">Zero data leaves your device. Models run as background sidecars.</p>

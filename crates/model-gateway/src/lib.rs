@@ -20,6 +20,7 @@
 //! implementation with SSE streaming, and tests use in-memory transports.
 
 pub mod cache;
+pub mod downloader;
 pub mod gateway;
 #[cfg(feature = "http")]
 pub mod http;
@@ -29,6 +30,11 @@ pub mod router;
 #[cfg(feature = "http")]
 pub mod sidecar;
 pub mod stream;
+
+pub use downloader::{
+    default_models_directory, get_recommended_catalog, inspect_model_installation, ModelCatalogEntry,
+    ModelInstallStatus,
+};
 
 /// Kept for callers that predate the generalised provider.
 pub mod llama_server {

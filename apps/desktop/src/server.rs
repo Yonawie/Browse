@@ -14,6 +14,7 @@ use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
 use memory::{auto_cluster_tab, now_ms, MemoryStore, NewBookmark, SearchFilters, TabForClustering};
+use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
 use page_intelligence::{
     compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
     inspect_page_privacy, inspect_url_phishing, AdBlockEngine, ConsoleDiagnosticInput, NetworkDiagnosticInput,
@@ -741,6 +742,67 @@ pub async fn dispatch_rpc(
             let lock = state.store.lock().unwrap();
             let html = lock.export_netscape_bookmarks().map_err(|e| json!({"error": e.to_string()}))?;
             Ok(json!({ "html": html }))
+        }
+        "models.catalog" => {
+            let catalog = get_recommended_catalog();
+            Ok(json!({ "catalog": catalog }))
+        }
+        "models.status" => {
+            let models_dir = default_models_directory();
+            let catalog = get_recommended_catalog();
+            let mut statuses = Vec::new();
+            for entry in &catalog {
+                let status = inspect_model_installation(&models_dir, entry);
+                statuses.push(json!({
+                    "id": entry.id,
+                    "name": entry.name,
+                    "tier": entry.tier,
+                    "status": status,
+                }));
+            }
+            Ok(json!({
+                "models_dir": models_dir.to_string_lossy(),
+                "models": statuses
+            }))
+        }
+        "history.list" => {
+            let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize;
+            let offset = req.params.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let search = req.params.get("search").and_then(Value::as_str);
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_history(profile_id, limit, offset, search).unwrap_or_default();
+            Ok(json!(list))
+        }
+        "history.record" => {
+            let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
+            let title = req.params.get("title").and_then(Value::as_str);
+            let transition = req.params.get("transition").and_then(Value::as_str).unwrap_or("link");
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let lock = state.store.lock().unwrap();
+            let id = lock.record_visit(profile_id, url, title, transition).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": id, "url": url }))
+        }
+        "history.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_history_visit(id).unwrap_or(false);
+            Ok(json!({ "deleted": deleted, "id": id }))
+        }
+        "history.clear" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let since_ms = req.params.get("since_ms").and_then(Value::as_i64);
+            let lock = state.store.lock().unwrap();
+            let count = lock.clear_history(profile_id, since_ms).unwrap_or(0);
+            Ok(json!({ "cleared_count": count }))
+        }
+        "history.top_domains" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let limit = req.params.get("limit").and_then(Value::as_u64).unwrap_or(10) as usize;
+            let lock = state.store.lock().unwrap();
+            let top = lock.top_history_domains(profile_id, limit).unwrap_or_default();
+            let top_json: Vec<Value> = top.into_iter().map(|(d, c)| json!({ "domain": d, "visits": c })).collect();
+            Ok(json!(top_json))
         }
         "skills.list" => {
             let skills = core_types::builtin_skills();
@@ -1549,8 +1611,69 @@ mod tests {
             method: "bookmarks.delete".to_string(),
             params: json!({ "id": bm_id }),
         };
-        let res_bm_del = dispatch_rpc(state, req_bm_del).await.unwrap();
+        let res_bm_del = dispatch_rpc(state.clone(), req_bm_del).await.unwrap();
         assert_eq!(res_bm_del["deleted"], true);
+
+        // 9. Model Catalog & Status Inspector
+        let req_models = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(100)),
+            method: "models.catalog".to_string(),
+            params: json!({}),
+        };
+        let res_models = dispatch_rpc(state.clone(), req_models).await.unwrap();
+        assert!(!res_models["catalog"].as_array().unwrap().is_empty());
+
+        let req_model_status = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(101)),
+            method: "models.status".to_string(),
+            params: json!({}),
+        };
+        let res_model_status = dispatch_rpc(state.clone(), req_model_status).await.unwrap();
+        assert!(!res_model_status["models"].as_array().unwrap().is_empty());
+
+        // 10. History Manager & Domain Analytics
+        let req_hist_rec = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(102)),
+            method: "history.record".to_string(),
+            params: json!({
+                "profile": "default",
+                "url": "https://doc.rust-lang.org/std",
+                "title": "Rust Standard Library",
+                "transition": "typed"
+            }),
+        };
+        let res_hist_rec = dispatch_rpc(state.clone(), req_hist_rec).await.unwrap();
+        let hist_id = res_hist_rec["id"].as_str().unwrap();
+
+        let req_hist_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(103)),
+            method: "history.list".to_string(),
+            params: json!({ "profile": "default", "limit": 10 }),
+        };
+        let res_hist_list = dispatch_rpc(state.clone(), req_hist_list).await.unwrap();
+        assert_eq!(res_hist_list.as_array().unwrap().len(), 1);
+
+        let req_hist_top = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(104)),
+            method: "history.top_domains".to_string(),
+            params: json!({ "profile": "default" }),
+        };
+        let res_hist_top = dispatch_rpc(state.clone(), req_hist_top).await.unwrap();
+        assert_eq!(res_hist_top[0]["domain"], "doc.rust-lang.org");
+
+        let req_hist_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(105)),
+            method: "history.delete".to_string(),
+            params: json!({ "id": hist_id }),
+        };
+        let res_hist_del = dispatch_rpc(state, req_hist_del).await.unwrap();
+        assert_eq!(res_hist_del["deleted"], true);
     }
 }
 

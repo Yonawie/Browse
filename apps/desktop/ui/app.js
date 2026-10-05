@@ -17,6 +17,8 @@ class BrowseShell {
     this.connectEventStream();
     this.fetchTabs();
     this.fetchBookmarks();
+    this.fetchHistory();
+    this.fetchModelCatalog();
     this.fetchMemoryStats();
     this.checkPruneCandidates();
   }
@@ -105,6 +107,12 @@ class BrowseShell {
     this.btnShield = document.getElementById('btn-adblock-shield');
     this.bookmarksList = document.getElementById('bookmarks-list');
 
+    // History & Models
+    this.historySearch = document.getElementById('history-search-input');
+    this.btnClearHistory = document.getElementById('btn-clear-history');
+    this.historyList = document.getElementById('history-list');
+    this.modelCatalogList = document.getElementById('model-catalog-list');
+
     // Playwright export (D-2)
     this.btnExportPlaywright = document.getElementById('btn-export-playwright');
     this.playwrightModal = document.getElementById('playwright-modal');
@@ -182,6 +190,14 @@ class BrowseShell {
     }
     if (this.btnShield) {
       this.btnShield.addEventListener('click', () => this.toggleShield());
+    }
+
+    // History (🕒)
+    if (this.historySearch) {
+      this.historySearch.addEventListener('input', () => this.fetchHistory(this.historySearch.value.trim()));
+    }
+    if (this.btnClearHistory) {
+      this.btnClearHistory.addEventListener('click', () => this.clearHistory());
     }
 
     // Selection Context (IN-4)
@@ -1121,6 +1137,107 @@ class BrowseShell {
         this.btnShield.className = 'badge offline-badge';
         this.showToast('⚠ AdBlock Protection disabled for this session');
       }
+    }
+  }
+
+  async recordHistory(url, title) {
+    if (!url || url === 'about:blank') return;
+    try {
+      await this.rpc('history.record', {
+        url,
+        title: title || url,
+        transition: 'typed',
+        profile: 'default'
+      });
+      this.fetchHistory();
+    } catch (e) {
+      console.warn('Record history error:', e);
+    }
+  }
+
+  async fetchHistory(search = '') {
+    if (!this.historyList) return;
+    try {
+      const list = await this.rpc('history.list', { profile: 'default', limit: 40, search: search || null }) || [];
+      if (list.length === 0) {
+        this.historyList.innerHTML = '<span class="empty-hint" style="font-size:12px;">No history records found.</span>';
+        return;
+      }
+      this.historyList.innerHTML = list.map(item => `
+        <div class="history-item" style="padding:6px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px;cursor:pointer;" class="hist-title-link">
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${this.escapeHtml(item.title || item.url)}</div>
+            <div style="font-size:10px;color:var(--text-dim);">${this.escapeHtml(item.url)} &bull; ${new Date(item.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+          </div>
+          <button class="btn-icon btn-del-hist" data-id="${item.id}" title="Remove" style="font-size:11px;opacity:0.6;cursor:pointer;">×</button>
+        </div>
+      `).join('');
+
+      this.historyList.querySelectorAll('.hist-title-link').forEach((el, idx) => {
+        el.addEventListener('click', () => {
+          const item = list[idx];
+          if (item) {
+            this.omnibox.value = item.url;
+            this.handleOmniboxSubmit();
+          }
+        });
+      });
+
+      this.historyList.querySelectorAll('.btn-del-hist').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-id');
+          await this.rpc('history.delete', { id });
+          this.fetchHistory(search);
+        });
+      });
+    } catch (e) {
+      console.warn('Fetch history error:', e);
+    }
+  }
+
+  async clearHistory() {
+    try {
+      const res = await this.rpc('history.clear', { profile: 'default' });
+      this.showToast(`Cleared ${res ? res.cleared_count : 0} history records`);
+      this.fetchHistory();
+    } catch (e) {
+      console.error('Clear history error:', e);
+    }
+  }
+
+  async fetchModelCatalog() {
+    if (!this.modelCatalogList) return;
+    try {
+      const res = await this.rpc('models.status', {});
+      if (!res || !res.models || res.models.length === 0) {
+        this.modelCatalogList.innerHTML = '<span class="empty-hint" style="font-size:12px;">No recommended models found.</span>';
+        return;
+      }
+      this.modelCatalogList.innerHTML = res.models.map(m => {
+        const isInstalled = m.status && m.status.status === 'installed';
+        const sizeMb = isInstalled ? (m.status.size_bytes / (1024 * 1024)).toFixed(0) : (m.status.expected_size_bytes / (1024 * 1024)).toFixed(0);
+        const statusBadge = isInstalled
+          ? '<span class="safe-tag" style="font-size:10px;">✔ Installed</span>'
+          : '<span class="warning-alert" style="font-size:10px;">Not downloaded</span>';
+
+        return `
+          <div style="padding:8px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <strong style="font-size:12px;color:var(--text-primary);">${this.escapeHtml(m.name)}</strong>
+              ${statusBadge}
+            </div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px;">
+              Tier: <code>${m.tier}</code> &bull; Size: ~${sizeMb} MB
+            </div>
+            ${isInstalled
+              ? `<div style="font-size:10px;color:var(--text-dim);">Ready for offline inference in <code>${this.escapeHtml(res.models_dir)}</code></div>`
+              : `<button class="btn-primary" style="font-size:10px;padding:3px 8px;cursor:pointer;" onclick="browseShell.showToast('Download instructions available in docs/02-architecture.md')">📥 Setup Model</button>`}
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Fetch model catalog error:', e);
     }
   }
 

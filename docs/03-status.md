@@ -36,10 +36,12 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | DevTools Error Explainer (D-1): локальный анализ CORS/CSP/JS-ошибок с маскированием секретов | готово | см. git log | 31 unit (page-intelligence) + RPC `devtools.explain` + UI Dev Diagnostics |
 | AdBlock & Tracker Shield: активный перехват и блокировка рекламы/трекеров по правилам EasyList | готово | см. git log | 35 unit (page-intelligence) + RPC `adblock.*` + UI Shield Button |
 | Bookmarks Manager: хранение закладок, папки, теги, импорт/экспорт Netscape HTML (Chrome/Firefox) | готово | см. git log | 20 unit (memory) + RPC `bookmarks.*` + UI Bookmarks Bar |
+| Model Catalog & Downloader: каталог рекомендованных GGUF-моделей (Qwen/Llama/BGE), инспекция статуса | готово | см. git log | 36 unit (model-gateway) + RPC `models.*` + UI 1-Click Setup |
+| Browsing History Manager: история навигаций, поиск, аналитика доменов, удаление и очистка | готово | см. git log | 21 unit (memory) + RPC `history.*` + UI History Tab |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **191 тест, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 20,
-model-gateway 34 + 3 live, page-intelligence 35, policy 14, desktop 26); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **194 теста, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 21,
+model-gateway 36 + 3 live, page-intelligence 35, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет

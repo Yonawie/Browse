@@ -9,6 +9,7 @@
 pub mod bookmarks;
 pub mod export;
 pub mod grouping;
+pub mod history;
 pub mod journal;
 pub mod search;
 pub mod store;
@@ -16,6 +17,7 @@ pub mod store;
 pub use bookmarks::{BookmarkRecord, NewBookmark};
 pub use export::{ExportFormat, ExportedDocument, MemoryExportReport};
 pub use grouping::{cluster_tabs, AutoTabGroup, TabForClustering};
+pub use history::HistoryVisitRecord;
 pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};
 pub use search::{SearchFilters, SearchHit};
 pub use store::{
