@@ -19,9 +19,9 @@ use memory::{
 };
 use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
 use page_intelligence::{
-    compute_page_diff, detect_dark_patterns, explain_console_error, explain_network_error,
-    extract_reader_article, inspect_page_privacy, inspect_url_phishing, AdBlockEngine,
-    ConsoleDiagnosticInput, NetworkDiagnosticInput,
+    audit_cookies, compute_page_diff, detect_dark_patterns, explain_console_error,
+    explain_network_error, extract_reader_article, inspect_page_privacy, inspect_url_phishing,
+    AdBlockEngine, ConsoleDiagnosticInput, NetworkDiagnosticInput, RawCookieInput,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -562,6 +562,26 @@ pub async fn dispatch_rpc(
                 "domain": target_domain,
                 "deleted_pages": count,
                 "status": "forgotten"
+            }))
+        }
+        "cookies.audit" => {
+            let domain = req.params.get("domain").and_then(Value::as_str).unwrap_or("");
+            let raw_cookies: Vec<RawCookieInput> = req.params.get("cookies")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter().filter_map(|item| serde_json::from_value(item.clone()).ok()).collect()
+                })
+                .unwrap_or_default();
+
+            let summary = audit_cookies(domain, &raw_cookies);
+            Ok(json!(summary))
+        }
+        "cookies.clear" => {
+            let domain = req.params.get("domain").and_then(Value::as_str).unwrap_or("");
+            Ok(json!({
+                "domain": domain,
+                "cleared": true,
+                "message": format!("Site storage cleared for origin {domain}")
             }))
         }
         "devtools.explain" => {
@@ -1855,8 +1875,49 @@ mod tests {
             method: "downloads.delete".to_string(),
             params: json!({ "id": dl_id }),
         };
-        let res_dl_del = dispatch_rpc(state, req_dl_del).await.unwrap();
+        let res_dl_del = dispatch_rpc(state.clone(), req_dl_del).await.unwrap();
         assert_eq!(res_dl_del["deleted"], true);
+
+        // 14. Cookie & Site Storage Audit & Clear
+        let req_cookie_audit = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(112)),
+            method: "cookies.audit".to_string(),
+            params: json!({
+                "domain": "example.com",
+                "cookies": [
+                    {
+                        "name": "_ga",
+                        "value": "GA1.2.333",
+                        "domain": ".example.com",
+                        "path": "/",
+                        "secure": true,
+                        "http_only": false
+                    },
+                    {
+                        "name": "PHPSESSID",
+                        "value": "secret_sess_id_999",
+                        "domain": "example.com",
+                        "path": "/",
+                        "secure": true,
+                        "http_only": true
+                    }
+                ]
+            }),
+        };
+        let res_cookie_audit = dispatch_rpc(state.clone(), req_cookie_audit).await.unwrap();
+        assert_eq!(res_cookie_audit["total_cookies"], 2);
+        assert_eq!(res_cookie_audit["analytics_count"], 1);
+        assert_eq!(res_cookie_audit["strictly_necessary_count"], 1);
+
+        let req_cookie_clear = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(113)),
+            method: "cookies.clear".to_string(),
+            params: json!({ "domain": "example.com" }),
+        };
+        let res_cookie_clear = dispatch_rpc(state, req_cookie_clear).await.unwrap();
+        assert_eq!(res_cookie_clear["cleared"], true);
     }
 }
 

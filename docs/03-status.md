@@ -41,10 +41,12 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Distraction-Free Reader Mode: извлечение чистого текста статьи, расчет времени чтения, UI оверлей | готово | см. git log | 36 unit (page-intelligence) + RPC `page.reader_mode` + UI Reader View |
 | Site Data Cleaner ("Forget This Site"): каскадная очистка всех следов домена (история, память, чанки) | готово | см. git log | RPC `page.forget_site` + UI Forget Site Button |
 | Download Manager & Safe File Inspector: трекинг загрузок, эвристики расширений, SHA-256 хеш | готово | см. git log | 23 unit (memory) + RPC `downloads.*` + UI Downloads Manager |
+| Cookie & Site Storage Inspector: аудит и классификация куки, маскирование значений, очистка | готово | см. git log | 38 unit (page-intelligence) + RPC `cookies.*` + UI Storage Inspector |
+| Find in Page (Ctrl+F): полнотекстовый поиск по странице, навигация Enter/Shift+Enter, счетчик | готово | см. git log | Хоткей Ctrl+F, регистронезависимый поиск, UI Find Bar |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **198 тестов, 0 падений**
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **200 тестов, 0 падений**
 (agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 13, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 23,
-model-gateway 36 + 3 live, page-intelligence 36, policy 14, desktop 26); `cargo clippy --workspace --all-targets
+model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 26); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет

@@ -93,6 +93,16 @@
             <!-- Article content rendered here -->
           </div>
         </div>
+
+        <!-- In-Page Find Bar (Ctrl+F) -->
+        <div id="find-bar" class="find-bar hidden" style="position:absolute;top:40px;right:20px;z-index:30;display:flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:6px 10px;box-shadow:0 4px 16px rgba(0,0,0,0.3);">
+          <input type="text" id="find-input" placeholder="Find in page (Ctrl+F)..." style="background:transparent;border:none;outline:none;color:var(--text-primary);font-size:12px;width:160px;" autocomplete="off">
+          <span id="find-counter" style="font-size:11px;color:var(--text-secondary);min-width:38px;text-align:center;">0 / 0</span>
+          <button class="btn-icon" id="btn-find-prev" title="Previous (Shift+Enter)" style="font-size:11px;padding:2px 6px;">▲</button>
+          <button class="btn-icon" id="btn-find-next" title="Next (Enter)" style="font-size:11px;padding:2px 6px;">▼</button>
+          <button class="btn-icon" id="btn-find-case" title="Match Case" style="font-size:11px;font-weight:700;padding:2px 6px;opacity:0.6;">Aa</button>
+          <button class="btn-icon" id="btn-find-close" title="Close (Esc)" style="font-size:12px;padding:2px 6px;">✕</button>
+        </div>
       </section>
 
       <!-- AI Assistant Sidebar -->
@@ -227,6 +237,21 @@
               <div id="diag-summary" style="margin-bottom:4px;font-size:11px;"></div>
               <div id="diag-cause" style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;"></div>
               <div id="diag-fix" class="safe-tag" style="display:block;font-size:11px;margin-top:4px;line-height:1.4;"></div>
+            </div>
+          </div>
+
+          <div class="safety-section">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0;">Cookie & Storage Inspector</h4>
+              <div style="display:flex; gap:6px;">
+                <button class="btn-secondary" id="btn-inspect-cookies" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Inspect active cookies and storage">Inspect</button>
+                <button class="btn-danger" id="btn-clear-storage" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Clear cookies and local storage">Clear Storage</button>
+              </div>
+            </div>
+            <p class="settings-hint" style="margin-top:4px;font-size:11px;">Classifies cookies into strictly necessary, functional, analytics, and advertising trackers with value masking.</p>
+            <div id="cookies-audit-details" class="safety-details hidden" style="margin-top:8px;">
+              <div id="cookies-breakdown" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;"></div>
+              <div id="cookies-list" style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;"></div>
             </div>
           </div>
 

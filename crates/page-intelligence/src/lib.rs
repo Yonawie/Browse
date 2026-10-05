@@ -6,6 +6,7 @@ pub mod adblock;
 pub mod budget;
 pub mod chunker;
 pub mod citations;
+pub mod cookies;
 pub mod dark_patterns;
 pub mod devtools;
 pub mod diff;
@@ -20,6 +21,9 @@ pub use adblock::{AdBlockCategory, AdBlockDecision, AdBlockEngine, AdBlockRule, 
 pub use budget::{trim_observation, ObservationBudget};
 pub use chunker::{chunk_text, Chunk, ChunkerConfig};
 pub use citations::{extract_citation_ids, format_citation_report, verify_citations, CitationMatch, CitationReport};
+pub use cookies::{
+    audit_cookies, classify_cookie, CookieCategory, CookieInfo, RawCookieInput, StorageAuditSummary,
+};
 pub use core_types::{ExtractedEntity, ExtractedRelation};
 pub use dark_patterns::{detect_dark_patterns, DarkPatternCategory, DarkPatternFinding};
 pub use devtools::{

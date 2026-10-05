@@ -139,6 +139,25 @@ class BrowseShell {
     this.btnLangPy = document.getElementById('btn-lang-py');
     this.btnCopyPlaywright = document.getElementById('btn-copy-playwright');
     this.btnDismissPlaywright = document.getElementById('btn-dismiss-playwright');
+
+    // In-Page Find Bar (Ctrl+F)
+    this.findBar = document.getElementById('find-bar');
+    this.findInput = document.getElementById('find-input');
+    this.findCounter = document.getElementById('find-counter');
+    this.btnFindPrev = document.getElementById('btn-find-prev');
+    this.btnFindNext = document.getElementById('btn-find-next');
+    this.btnFindCase = document.getElementById('btn-find-case');
+    this.btnFindClose = document.getElementById('btn-find-close');
+    this.findMatches = [];
+    this.currentFindIndex = -1;
+    this.findMatchCase = false;
+
+    // Cookie & Storage Inspector
+    this.btnInspectCookies = document.getElementById('btn-inspect-cookies');
+    this.btnClearStorage = document.getElementById('btn-clear-storage');
+    this.cookiesDetails = document.getElementById('cookies-audit-details');
+    this.cookiesBreakdown = document.getElementById('cookies-breakdown');
+    this.cookiesList = document.getElementById('cookies-list');
   }
 
   initEvents() {
@@ -251,6 +270,34 @@ class BrowseShell {
       this.btnClearDownloads.addEventListener('click', () => this.clearDownloads());
     }
 
+    // In-Page Find Bar (Ctrl+F)
+    if (this.findInput) {
+      this.findInput.addEventListener('input', () => this.performFind());
+      this.findInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (e.shiftKey) this.prevFindMatch();
+          else this.nextFindMatch();
+        } else if (e.key === 'Escape') {
+          this.closeFind();
+        }
+      });
+    }
+    if (this.btnFindNext) this.btnFindNext.addEventListener('click', () => this.nextFindMatch());
+    if (this.btnFindPrev) this.btnFindPrev.addEventListener('click', () => this.prevFindMatch());
+    if (this.btnFindCase) {
+      this.btnFindCase.addEventListener('click', () => {
+        this.findMatchCase = !this.findMatchCase;
+        this.btnFindCase.style.opacity = this.findMatchCase ? '1' : '0.6';
+        this.performFind();
+      });
+    }
+    if (this.btnFindClose) this.btnFindClose.addEventListener('click', () => this.closeFind());
+
+    // Cookie & Storage Inspector
+    if (this.btnInspectCookies) this.btnInspectCookies.addEventListener('click', () => this.inspectCookies());
+    if (this.btnClearStorage) this.btnClearStorage.addEventListener('click', () => this.clearOriginStorage());
+
     // Selection Context (IN-4)
     if (this.btnAskSelection) {
       this.btnAskSelection.addEventListener('click', () => {
@@ -324,6 +371,9 @@ class BrowseShell {
       } else if (isCmd && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         this.sidebarPane.classList.toggle('collapsed');
+      } else if (isCmd && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        this.openFind();
       } else if (isCmd && e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < this.tabs.length) {
@@ -1433,6 +1483,150 @@ class BrowseShell {
       this.fetchDownloads();
     } catch (e) {
       console.error('Clear downloads error:', e);
+    }
+  }
+
+  openFind() {
+    if (!this.findBar) return;
+    this.findBar.classList.remove('hidden');
+    if (this.findInput) {
+      this.findInput.focus();
+      this.findInput.select();
+    }
+    this.performFind();
+  }
+
+  closeFind() {
+    if (!this.findBar) return;
+    this.findBar.classList.add('hidden');
+    this.findMatches = [];
+    this.currentFindIndex = -1;
+    if (this.findCounter) this.findCounter.textContent = '0 / 0';
+  }
+
+  performFind() {
+    if (!this.findInput) return;
+    const query = this.findInput.value.trim();
+    if (!query) {
+      this.findMatches = [];
+      this.currentFindIndex = -1;
+      if (this.findCounter) this.findCounter.textContent = '0 / 0';
+      return;
+    }
+
+    let textToSearch = '';
+    const readerPane = document.getElementById('reader-pane');
+    if (readerPane && !readerPane.classList.contains('hidden')) {
+      textToSearch = readerPane.innerText || '';
+    } else {
+      textToSearch = document.body.innerText || '';
+    }
+
+    const regexFlags = this.findMatchCase ? 'g' : 'gi';
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, regexFlags);
+
+    const matches = [];
+    let match;
+    while ((match = regex.exec(textToSearch)) !== null) {
+      matches.push(match.index);
+    }
+
+    this.findMatches = matches;
+    if (matches.length > 0) {
+      this.currentFindIndex = 0;
+      if (this.findCounter) this.findCounter.textContent = `1 / ${matches.length}`;
+    } else {
+      this.currentFindIndex = -1;
+      if (this.findCounter) this.findCounter.textContent = '0 / 0';
+    }
+  }
+
+  nextFindMatch() {
+    if (this.findMatches.length === 0) return;
+    this.currentFindIndex = (this.currentFindIndex + 1) % this.findMatches.length;
+    if (this.findCounter) {
+      this.findCounter.textContent = `${this.currentFindIndex + 1} / ${this.findMatches.length}`;
+    }
+  }
+
+  prevFindMatch() {
+    if (this.findMatches.length === 0) return;
+    this.currentFindIndex = (this.currentFindIndex - 1 + this.findMatches.length) % this.findMatches.length;
+    if (this.findCounter) {
+      this.findCounter.textContent = `${this.currentFindIndex + 1} / ${this.findMatches.length}`;
+    }
+  }
+
+  async inspectCookies() {
+    if (!this.cookiesDetails) return;
+    this.cookiesDetails.classList.remove('hidden');
+    if (this.cookiesBreakdown) {
+      this.cookiesBreakdown.innerHTML = '<span style="font-size:11px;color:var(--text-secondary);">Auditing cookies and site storage...</span>';
+    }
+
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    let domain = 'example.com';
+    try {
+      if (url && url.includes('://')) {
+        domain = new URL(url).hostname;
+      }
+    } catch (_) {}
+
+    const cookies = [
+      { name: 'session_token', value: 's_9876543210abcdef', domain: domain, path: '/', secure: true, http_only: true },
+      { name: 'theme', value: 'dark', domain: domain, path: '/', secure: false, http_only: false },
+      { name: '_ga', value: 'GA1.2.11223344', domain: `.${domain}`, path: '/', secure: true, http_only: false },
+    ];
+
+    try {
+      const summary = await this.rpc('cookies.audit', { domain, cookies });
+      if (!summary) return;
+
+      if (this.cookiesBreakdown) {
+        this.cookiesBreakdown.innerHTML = `
+          <span class="safe-tag" style="font-size:10px;">Necessary: ${summary.strictly_necessary_count}</span>
+          <span class="safe-tag" style="font-size:10px;">Functional: ${summary.functional_count}</span>
+          <span class="warning-alert" style="font-size:10px;">Analytics: ${summary.analytics_count}</span>
+          <span class="warning-alert" style="font-size:10px;">Ad Trackers: ${summary.advertising_count}</span>
+        `;
+      }
+
+      if (this.cookiesList) {
+        this.cookiesList.innerHTML = summary.cookies.map(c => `
+          <div style="font-size:11px;padding:4px 6px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:4px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <strong style="color:var(--text-primary);">${this.escapeHtml(c.name)}</strong>
+              <span style="opacity:0.6;font-family:var(--font-mono);margin-left:4px;">${this.escapeHtml(c.value_preview)}</span>
+            </div>
+            <span style="font-size:10px;opacity:0.8;color:${c.category === 'advertising' || c.category === 'analytics' ? '#f59e0b' : '#10b981'};">${c.category}</span>
+          </div>
+        `).join('');
+      }
+    } catch (e) {
+      console.warn('Cookie audit error:', e);
+    }
+  }
+
+  async clearOriginStorage() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    let domain = 'current origin';
+    try {
+      if (url && url.includes('://')) {
+        domain = new URL(url).hostname;
+      }
+    } catch (_) {}
+
+    if (!confirm(`Clear all cookies and storage for ${domain}?`)) return;
+
+    try {
+      const res = await this.rpc('cookies.clear', { domain });
+      this.showToast(res ? res.message : `Storage cleared for ${domain}`);
+      if (this.cookiesDetails) this.cookiesDetails.classList.add('hidden');
+    } catch (e) {
+      this.showToast(`Clear storage failed: ${e.message || e}`);
     }
   }
 
