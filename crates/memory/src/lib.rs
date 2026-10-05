@@ -14,11 +14,13 @@ pub mod history;
 pub mod journal;
 pub mod search;
 pub mod store;
+pub mod vault;
 
 pub use bookmarks::{BookmarkRecord, NewBookmark};
 pub use downloads::{
     assess_download_danger, DownloadDangerLevel, DownloadRecord, DownloadStatus, NewDownload,
 };
+pub use vault::{NewCredential, VaultCredential};
 pub use export::{ExportFormat, ExportedDocument, MemoryExportReport};
 pub use grouping::{cluster_tabs, AutoTabGroup, TabForClustering};
 pub use history::HistoryVisitRecord;

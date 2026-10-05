@@ -19,6 +19,7 @@ class BrowseShell {
     this.fetchBookmarks();
     this.fetchHistory();
     this.fetchDownloads();
+    this.fetchVaultCredentials();
     this.fetchModelCatalog();
     this.fetchMemoryStats();
     this.checkPruneCandidates();
@@ -158,6 +159,10 @@ class BrowseShell {
     this.cookiesDetails = document.getElementById('cookies-audit-details');
     this.cookiesBreakdown = document.getElementById('cookies-breakdown');
     this.cookiesList = document.getElementById('cookies-list');
+
+    // Password & Credentials Vault
+    this.btnSaveCred = document.getElementById('btn-save-cred');
+    this.vaultCredsList = document.getElementById('vault-creds-list');
   }
 
   initEvents() {
@@ -297,6 +302,9 @@ class BrowseShell {
     // Cookie & Storage Inspector
     if (this.btnInspectCookies) this.btnInspectCookies.addEventListener('click', () => this.inspectCookies());
     if (this.btnClearStorage) this.btnClearStorage.addEventListener('click', () => this.clearOriginStorage());
+
+    // Password & Credentials Vault
+    if (this.btnSaveCred) this.btnSaveCred.addEventListener('click', () => this.promptSaveCredential());
 
     // Selection Context (IN-4)
     if (this.btnAskSelection) {
@@ -1627,6 +1635,79 @@ class BrowseShell {
       if (this.cookiesDetails) this.cookiesDetails.classList.add('hidden');
     } catch (e) {
       this.showToast(`Clear storage failed: ${e.message || e}`);
+    }
+  }
+
+  async promptSaveCredential() {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const origin = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    const username = prompt('Enter username / email:');
+    if (!username) return;
+    const secret = prompt('Enter password:');
+    if (!secret) return;
+
+    try {
+      const res = await this.rpc('vault.save', { origin, username, secret });
+      if (res) {
+        this.showToast(`Saved encrypted credentials for ${res.username}`);
+        this.fetchVaultCredentials();
+      }
+    } catch (e) {
+      this.showToast(`Failed to save credential: ${e.message || e}`);
+    }
+  }
+
+  async fetchVaultCredentials() {
+    if (!this.vaultCredsList) return;
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    const url = activeTab ? activeTab.url : (this.omnibox ? this.omnibox.value : '');
+    let domain = null;
+    try {
+      if (url && url.includes('://')) domain = new URL(url).hostname;
+    } catch (_) {}
+
+    try {
+      const creds = await this.rpc('vault.list', { domain }) || [];
+      if (creds.length === 0) {
+        this.vaultCredsList.innerHTML = '<div class="empty-hint" style="font-size:11px;">No saved credentials for this domain.</div>';
+        return;
+      }
+      this.vaultCredsList.innerHTML = creds.map(c => `
+        <div style="font-size:11px;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <strong style="color:var(--text-primary);">${this.escapeHtml(c.username)}</strong>
+            <span style="opacity:0.6;margin-left:6px;">(${this.escapeHtml(c.domain)})</span>
+            <div style="font-family:var(--font-mono);opacity:0.5;font-size:10px;">••••••••••••</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="browseShell.revealCredential('${this.escapeHtml(c.id)}')">👁️ Reveal</button>
+            <button class="btn-icon" style="font-size:11px;opacity:0.6;" onclick="browseShell.deleteCredential('${this.escapeHtml(c.id)}')">×</button>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      console.warn('Fetch vault error:', e);
+    }
+  }
+
+  async revealCredential(id) {
+    try {
+      const res = await this.rpc('vault.get', { id });
+      if (res && res.secret) {
+        alert(`Decrypted Password: ${res.secret}`);
+      }
+    } catch (e) {
+      this.showToast(`Decrypt error: ${e.message || e}`);
+    }
+  }
+
+  async deleteCredential(id) {
+    try {
+      await this.rpc('vault.delete', { id });
+      this.showToast('Credential deleted from vault');
+      this.fetchVaultCredentials();
+    } catch (e) {
+      console.error('Delete cred error:', e);
     }
   }
 

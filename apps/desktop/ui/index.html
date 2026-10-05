@@ -264,6 +264,17 @@
           </div>
 
           <div class="safety-section">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h4 style="margin:0;">Password & Credentials Vault</h4>
+              <button class="btn-secondary" id="btn-save-cred" style="font-size:11px; padding:2px 8px; cursor:pointer;" title="Save login for current origin">➕ Save Login</button>
+            </div>
+            <p class="settings-hint" style="margin-top:4px;font-size:11px;">Encrypted locally with BLAKE3 keystream cipher. Passwords are never indexed in search or telemetred.</p>
+            <div id="vault-creds-list" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+              <div class="empty-hint" style="font-size:11px;">No saved credentials for this domain.</div>
+            </div>
+          </div>
+
+          <div class="safety-section">
             <h4>Telemetry & Network Isolation</h4>
             <div class="safety-details">
               <p class="telemetry-info">🔒 <strong>Zero Telemetry Enforced:</strong> Browse never transmits keystrokes, personal browsing sessions, or embeddings to external cloud servers.</p>

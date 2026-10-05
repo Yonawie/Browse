@@ -14,8 +14,8 @@ use axum::Json;
 use core_types::{parse_tab_command, Sensitivity, TabCommandAction};
 use futures_util::stream::Stream;
 use memory::{
-    auto_cluster_tab, now_ms, DownloadStatus, MemoryStore, NewBookmark, NewDownload, SearchFilters,
-    TabForClustering,
+    auto_cluster_tab, now_ms, DownloadStatus, MemoryStore, NewBookmark, NewCredential, NewDownload,
+    SearchFilters, TabForClustering,
 };
 use model_gateway::{default_models_directory, get_recommended_catalog, inspect_model_installation};
 use page_intelligence::{
@@ -928,6 +928,42 @@ pub async fn dispatch_rpc(
             let lock = state.store.lock().unwrap();
             let count = lock.clear_downloads(profile_id).unwrap_or(0);
             Ok(json!({ "cleared_count": count }))
+        }
+        "vault.save" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let origin = req.params.get("origin").and_then(Value::as_str).unwrap_or("");
+            let username = req.params.get("username").and_then(Value::as_str).unwrap_or("");
+            let secret = req.params.get("secret").and_then(Value::as_str).unwrap_or("");
+
+            let new_c = NewCredential {
+                origin: origin.to_string(),
+                username: username.to_string(),
+                secret: secret.to_string(),
+            };
+
+            let lock = state.store.lock().unwrap();
+            let id = lock.save_credential(profile_id, &new_c, None).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!({ "id": id, "origin": origin, "username": username }))
+        }
+        "vault.list" => {
+            let profile_id = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let domain = req.params.get("domain").and_then(Value::as_str);
+
+            let lock = state.store.lock().unwrap();
+            let list = lock.list_credentials(profile_id, domain).unwrap_or_default();
+            Ok(json!(list))
+        }
+        "vault.get" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let secret = lock.get_credential_secret(id, None).unwrap_or(None);
+            Ok(json!({ "id": id, "secret": secret }))
+        }
+        "vault.delete" => {
+            let id = req.params.get("id").and_then(Value::as_str).unwrap_or("");
+            let lock = state.store.lock().unwrap();
+            let deleted = lock.delete_credential(id).unwrap_or(false);
+            Ok(json!({ "id": id, "deleted": deleted }))
         }
         "skills.list" => {
             let skills = core_types::builtin_skills();
@@ -1916,8 +1952,51 @@ mod tests {
             method: "cookies.clear".to_string(),
             params: json!({ "domain": "example.com" }),
         };
-        let res_cookie_clear = dispatch_rpc(state, req_cookie_clear).await.unwrap();
+        let res_cookie_clear = dispatch_rpc(state.clone(), req_cookie_clear).await.unwrap();
         assert_eq!(res_cookie_clear["cleared"], true);
+
+        // 15. Zero-Knowledge Password Vault
+        let req_vault_save = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(114)),
+            method: "vault.save".to_string(),
+            params: json!({
+                "profile": "default",
+                "origin": "https://github.com/login",
+                "username": "browse_user",
+                "secret": "SecureVaultPass123!"
+            }),
+        };
+        let res_vault_save = dispatch_rpc(state.clone(), req_vault_save).await.unwrap();
+        let cred_id = res_vault_save["id"].as_str().unwrap();
+
+        let req_vault_list = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(115)),
+            method: "vault.list".to_string(),
+            params: json!({ "profile": "default", "domain": "github.com" }),
+        };
+        let res_vault_list = dispatch_rpc(state.clone(), req_vault_list).await.unwrap();
+        assert_eq!(res_vault_list.as_array().unwrap().len(), 1);
+        assert_eq!(res_vault_list[0]["username"], "browse_user");
+
+        let req_vault_get = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(116)),
+            method: "vault.get".to_string(),
+            params: json!({ "id": cred_id }),
+        };
+        let res_vault_get = dispatch_rpc(state.clone(), req_vault_get).await.unwrap();
+        assert_eq!(res_vault_get["secret"], "SecureVaultPass123!");
+
+        let req_vault_del = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(117)),
+            method: "vault.delete".to_string(),
+            params: json!({ "id": cred_id }),
+        };
+        let res_vault_del = dispatch_rpc(state, req_vault_del).await.unwrap();
+        assert_eq!(res_vault_del["deleted"], true);
     }
 }
 
