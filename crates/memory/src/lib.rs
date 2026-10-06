@@ -21,7 +21,7 @@ pub use downloads::{
     assess_download_danger, DownloadDangerLevel, DownloadRecord, DownloadStatus, NewDownload,
 };
 pub use vault::{NewCredential, VaultCredential};
-pub use export::{ExportFormat, ExportedDocument, MemoryExportReport};
+pub use export::{ExportFormat, ExportedDocument, MemoryExportReport, MemoryImportReport};
 pub use grouping::{cluster_tabs, AutoTabGroup, TabForClustering};
 pub use history::HistoryVisitRecord;
 pub use journal::{JournalEntry, ModelCallRecord, ModelUsageRow};

@@ -26,6 +26,13 @@ pub struct MemoryExportReport {
     pub documents: Vec<ExportedDocument>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryImportReport {
+    pub imported_bookmarks: usize,
+    pub imported_reading_items: usize,
+    pub total_items: usize,
+}
+
 impl MemoryStore {
     /// Export the memory store into portable documents (Obsidian markdown vault or JSON).
     pub fn export_memory(&self, format: ExportFormat) -> Result<MemoryExportReport> {
@@ -220,11 +227,18 @@ impl MemoryStore {
             })
             .collect();
 
+        let bookmarks = self.list_bookmarks(None).unwrap_or_default();
+        let reading_list = self.list_reading_items("default", false).unwrap_or_default();
+        let downloads = self.list_downloads("default", 100).unwrap_or_default();
+
         let export_json = serde_json::json!({
             "schema_version": crate::SCHEMA_VERSION,
             "exported_at": crate::now_ms(),
             "pages": pages_json,
             "entities": entities_json,
+            "bookmarks": bookmarks,
+            "reading_list": reading_list,
+            "downloads": downloads,
         });
 
         let json_str = serde_json::to_string_pretty(&export_json)
@@ -262,6 +276,68 @@ impl MemoryStore {
             list.push(r?);
         }
         Ok(list)
+    }
+
+    /// Import bookmarks, reading list items, and metadata from exported JSON string.
+    pub fn import_memory_json(&self, profile_id: &str, json_str: &str) -> Result<MemoryImportReport> {
+        let parsed: serde_json::Value = serde_json::from_str(json_str)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+
+        let mut imported_bookmarks = 0;
+        let mut imported_reading_items = 0;
+
+        if let Some(bms) = parsed.get("bookmarks").and_then(serde_json::Value::as_array) {
+            for b in bms {
+                if let (Some(url), Some(title)) = (
+                    b.get("url").and_then(serde_json::Value::as_str),
+                    b.get("title").and_then(serde_json::Value::as_str),
+                ) {
+                    let folder = b.get("folder").and_then(serde_json::Value::as_str).map(ToString::to_string);
+                    let favicon_url = b.get("favicon_url").and_then(serde_json::Value::as_str).map(ToString::to_string);
+                    let tags: Vec<String> = b.get("tags")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|arr| arr.iter().filter_map(serde_json::Value::as_str).map(ToString::to_string).collect())
+                        .unwrap_or_default();
+
+                    let new_bm = crate::NewBookmark {
+                        url: url.to_string(),
+                        title: title.to_string(),
+                        folder,
+                        favicon_url,
+                        tags,
+                    };
+                    if self.add_bookmark(&new_bm).is_ok() {
+                        imported_bookmarks += 1;
+                    }
+                }
+            }
+        }
+
+        if let Some(items) = parsed.get("reading_list").and_then(serde_json::Value::as_array) {
+            for it in items {
+                if let (Some(url), Some(title)) = (
+                    it.get("url").and_then(serde_json::Value::as_str),
+                    it.get("title").and_then(serde_json::Value::as_str),
+                ) {
+                    let excerpt = it.get("excerpt").and_then(serde_json::Value::as_str).unwrap_or("");
+                    let reading_time = it.get("reading_time_min").and_then(serde_json::Value::as_u64).unwrap_or(3) as u32;
+                    let is_read = it.get("is_read").and_then(serde_json::Value::as_bool).unwrap_or(false);
+
+                    if let Ok(rec) = self.add_reading_item(None, profile_id, url, title, excerpt, reading_time) {
+                        if is_read {
+                            let _ = self.toggle_reading_item_read(&rec.id, true);
+                        }
+                        imported_reading_items += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(MemoryImportReport {
+            imported_bookmarks,
+            imported_reading_items,
+            total_items: imported_bookmarks + imported_reading_items,
+        })
     }
 }
 
@@ -340,5 +416,49 @@ mod tests {
         assert_eq!(report.total_pages, 1);
         assert_eq!(report.documents.len(), 1);
         assert!(report.documents[0].content.contains("\"url\": \"https://example.com\""));
+        assert!(report.documents[0].content.contains("\"bookmarks\":"));
+        assert!(report.documents[0].content.contains("\"reading_list\":"));
+        assert!(report.documents[0].content.contains("\"downloads\":"));
+    }
+
+    #[test]
+    fn imports_memory_json() {
+        let s = test_store();
+
+        let json_data = r#"{
+            "schema_version": 1,
+            "exported_at": 1700000000000,
+            "bookmarks": [
+                {
+                    "url": "https://crates.io",
+                    "title": "Rust Package Registry",
+                    "folder": "Dev",
+                    "tags": ["rust", "cargo"]
+                }
+            ],
+            "reading_list": [
+                {
+                    "url": "https://blog.rust-lang.org",
+                    "title": "Rust Blog",
+                    "excerpt": "Announcements and releases",
+                    "reading_time_min": 5,
+                    "is_read": true
+                }
+            ]
+        }"#;
+
+        let res = s.import_memory_json("default", json_data).unwrap();
+        assert_eq!(res.imported_bookmarks, 1);
+        assert_eq!(res.imported_reading_items, 1);
+        assert_eq!(res.total_items, 2);
+
+        let bms = s.list_bookmarks(Some("Dev")).unwrap();
+        assert_eq!(bms.len(), 1);
+        assert_eq!(bms[0].title, "Rust Package Registry");
+
+        let rl = s.list_reading_items("default", false).unwrap();
+        assert_eq!(rl.len(), 1);
+        assert_eq!(rl[0].title, "Rust Blog");
+        assert!(rl[0].is_read);
     }
 }

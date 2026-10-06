@@ -294,11 +294,15 @@
             <button class="btn-primary" id="btn-memory-search">Search</button>
           </div>
 
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
-            <div class="memory-stats-badge" id="memory-stats-badge" style="margin:0;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:6px;">
+            <div class="memory-stats-badge" id="memory-stats-badge" style="margin:0; flex:1;">
               Loading memory stats...
             </div>
-            <button class="btn-secondary" id="btn-export-memory" style="font-size:11px; padding:3px 8px; cursor:pointer;" title="Export memory as Obsidian vault (M-4)">📦 Export Vault</button>
+            <div style="display:flex; gap:4px;">
+              <button class="btn-secondary" id="btn-export-memory" style="font-size:11px; padding:3px 8px; cursor:pointer;" title="Export memory backup (JSON / Obsidian)">📦 Backup</button>
+              <button class="btn-secondary" id="btn-import-memory" style="font-size:11px; padding:3px 8px; cursor:pointer;" title="Import memory archive (JSON)">📥 Restore</button>
+              <input type="file" id="memory-import-file" accept=".json" style="display:none;">
+            </div>
           </div>
 
           <!-- Knowledge Graph Insights -->

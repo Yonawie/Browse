@@ -1172,6 +1172,13 @@ pub async fn dispatch_rpc(
             let report = lock.export_memory(format).map_err(|e| json!({"error": e.to_string()}))?;
             Ok(json!(report))
         }
+        "memory.import" => {
+            let json_str = req.params.get("content").and_then(Value::as_str).unwrap_or("");
+            let profile = req.params.get("profile").and_then(Value::as_str).unwrap_or("default");
+            let lock = state.store.lock().unwrap();
+            let report = lock.import_memory_json(profile, json_str).map_err(|e| json!({"error": e.to_string()}))?;
+            Ok(json!(report))
+        }
         "adblock.evaluate" => {
             let url = req.params.get("url").and_then(Value::as_str).unwrap_or("");
             let engine = AdBlockEngine::new();
@@ -1464,6 +1471,8 @@ pub async fn dispatch_rpc(
                 ("reading list", "Reading List", "View offline saved articles and read-it-later items", "action:reading_list"),
                 ("add reading list", "Save to Reading List", "Bookmark current page to offline reading list", "action:add_reading_list"),
                 ("network", "Live Network Monitor", "Inspect HTTP/HTTPS network requests, traffic and blocks", "action:network_monitor"),
+                ("backup memory", "Backup Memory (JSON)", "Export complete memory, bookmarks, and reading list", "action:backup_memory"),
+                ("restore memory", "Restore / Import Memory (JSON)", "Import memory archive and bookmarks", "action:restore_memory"),
             ];
             for (kw, title, subtitle, act) in actions {
                 if query.is_empty() || title.to_lowercase().contains(&query) || kw.contains(&query) {
@@ -3058,6 +3067,49 @@ mod tests {
         assert_eq!(res_prog["progress"]["model_id"], "bge-small-en-v1.5");
         let pct = res_prog["progress"]["percent"].as_f64().unwrap();
         assert!((pct - 42.85).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_memory_json_import_rpc() {
+        let store = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let state = ShellServerState::new(Arc::new(Mutex::new(vec![])), store);
+
+        let json_payload = json!({
+            "schema_version": 1,
+            "exported_at": 1700000000000i64,
+            "bookmarks": [
+                {
+                    "url": "https://rust-lang.org",
+                    "title": "Rust Language",
+                    "folder": "Languages",
+                    "tags": ["rust"]
+                }
+            ],
+            "reading_list": [
+                {
+                    "url": "https://this-week-in-rust.org",
+                    "title": "This Week in Rust",
+                    "excerpt": "Weekly newsletter",
+                    "reading_time_min": 6,
+                    "is_read": false
+                }
+            ]
+        }).to_string();
+
+        let req = RpcRequest {
+            jsonrpc: Some("2.0".to_string()),
+            id: Some(json!(180)),
+            method: "memory.import".to_string(),
+            params: json!({
+                "content": json_payload,
+                "profile": "default"
+            }),
+        };
+
+        let res = dispatch_rpc(state, req).await.unwrap();
+        assert_eq!(res["imported_bookmarks"], 1);
+        assert_eq!(res["imported_reading_items"], 1);
+        assert_eq!(res["total_items"], 2);
     }
 }
 

@@ -88,8 +88,9 @@ class BrowseShell {
     this.memoryStats = document.getElementById('memory-stats-badge');
     this.memoryResults = document.getElementById('memory-results');
     this.kgTags = document.getElementById('knowledge-graph-tags');
-    this.btnRefreshKg = document.getElementById('btn-refresh-kg');
     this.btnExportMemory = document.getElementById('btn-export-memory');
+    this.btnImportMemory = document.getElementById('btn-import-memory');
+    this.memoryImportFile = document.getElementById('memory-import-file');
 
     // Privacy (D-5)
     this.privacyGrade = document.getElementById('privacy-grade-badge');
@@ -769,6 +770,10 @@ class BrowseShell {
     if (this.btnExportMemory) {
       this.btnExportMemory.addEventListener('click', () => this.exportMemory());
     }
+    if (this.btnImportMemory && this.memoryImportFile) {
+      this.btnImportMemory.addEventListener('click', () => this.memoryImportFile.click());
+      this.memoryImportFile.addEventListener('change', (e) => this.handleMemoryFileImport(e));
+    }
 
     // Playwright export (D-2)
     if (this.btnExportPlaywright) {
@@ -1395,27 +1400,61 @@ class BrowseShell {
 
   async exportMemory() {
     try {
-      this.showToast('Exporting Obsidian vault...');
-      const res = await this.rpc('memory.export', { format: 'obsidian' });
-      if (res && res.files) {
-        const noteCount = res.total_notes || Object.keys(res.files).length;
-        const kb = ((res.total_bytes || 0) / 1024).toFixed(1);
-        this.showToast(`Exported ${noteCount} notes to Obsidian vault format (${kb} KB)`);
-
-        // Trigger browser download of index file or prompt
-        const content = res.files['_index.md'] || '# Browse Memory Vault\n';
-        const blob = new Blob([content], { type: 'text/markdown' });
+      this.showToast('Generating memory backup...');
+      const res = await this.rpc('memory.export', { format: 'json' });
+      if (res && res.files && res.files['browse_memory_export.json']) {
+        const content = res.files['browse_memory_export.json'];
+        const blob = new Blob([content], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'browse_memory_vault_index.md';
+        a.download = `browse_memory_backup_${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(a.href);
+        const kb = ((res.total_bytes || content.length) / 1024).toFixed(1);
+        this.showToast(`Memory backup downloaded (${kb} KB)`);
       } else {
         this.showToast('Memory export completed.');
       }
     } catch (e) {
       console.error('Export memory error:', e);
-      this.showToast('Failed to export memory vault');
+      this.showToast('Failed to export memory archive');
+    }
+  }
+
+  async handleMemoryFileImport(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    try {
+      this.showToast(`Reading backup file ${file.name}...`);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const content = e.target.result;
+          const res = await this.rpc('memory.import', {
+            content,
+            profile: this.currentProfile || 'default'
+          });
+
+          if (res) {
+            const count = res.total_items || (res.imported_bookmarks + res.imported_reading_items);
+            this.showToast(`Successfully restored ${count} items from backup!`);
+            await this.fetchMemoryStats();
+            await this.fetchBookmarks();
+            if (this.fetchReadingList) await this.fetchReadingList();
+          }
+        } catch (err) {
+          console.error('Failed to import memory JSON:', err);
+          this.showToast('Failed to restore backup: ' + (err.message || 'invalid format'));
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      console.error('File read error:', err);
+      this.showToast('Failed to read file');
+      event.target.value = '';
     }
   }
 
@@ -2214,6 +2253,12 @@ class BrowseShell {
           break;
         case 'action:network_monitor':
           this.openNetworkModal();
+          break;
+        case 'action:backup_memory':
+          this.exportMemory();
+          break;
+        case 'action:restore_memory':
+          if (this.memoryImportFile) this.memoryImportFile.click();
           break;
         default:
           this.showToast(`Action executed: ${item.title}`);

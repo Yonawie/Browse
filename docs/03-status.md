@@ -59,10 +59,11 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Offline Reading List ("Read It Later"): отложенное чтение статей, фильтр прочитанного, время чтения | готово | см. git log | 30 unit (memory) + RPC `reading_list.*` + UI Reading List Modal |
 | Live Network Inspector: инспекция HTTP-трафика, размеров, задержек и заблокированных трекеров | готово | см. git log | 28 unit (desktop) + RPC `network.*` + UI Network Inspector Modal |
 | 1-Click Local Model Downloader: фоновая потоковая загрузка GGUF моделей с отслеживанием прогресса | готово | см. git log | 29 unit (desktop) + 36 (model-gateway) + RPC `models.download`/`models.progress` + UI Прогресс-бар |
+| Memory Backup & Restore: портативный архив памяти в JSON, экспорт/импорт закладок, чтения и памяти | готово | см. git log | 31 unit (memory) + 30 unit (desktop) + RPC `memory.export`/`memory.import` + UI Backup/Restore |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **216 тестов, 0 падений**
-(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 30,
-model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 29); `cargo clippy --workspace --all-targets
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **218 тестов, 0 падений**
+(agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 31,
+model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 30); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет
