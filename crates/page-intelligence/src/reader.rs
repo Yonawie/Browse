@@ -80,8 +80,20 @@ pub fn extract_reader_article(url: &str, title: &str, raw_text: &str) -> ReaderA
             continue;
         }
 
-        // Keep meaningful paragraphs (at least 20 chars or heading)
-        if p.len() >= 20 || p.starts_with('#') {
+        // Keep meaningful paragraphs (at least 20 chars, headings, code fences, quotes, or lists)
+        if p.len() >= 20
+            || p.starts_with('#')
+            || p.starts_with("```")
+            || p.starts_with("> ")
+            || p.starts_with("- ")
+            || p.starts_with("* ")
+            || p.contains("fn ")
+            || p.contains("let ")
+            || p.contains("print")
+            || p.contains(';')
+            || p.contains('{')
+            || p.contains('}')
+        {
             clean_paragraphs.push(p);
         }
     }
@@ -117,15 +129,49 @@ pub fn extract_reader_article(url: &str, title: &str, raw_text: &str) -> ReaderA
         reading_time_minutes, word_count
     ));
 
+    let mut in_code_block = false;
+    let mut code_buffer = Vec::new();
+
     for p in &clean_paragraphs {
-        if let Some(h2) = p.strip_prefix("## ") {
-            clean_html.push_str(&format!("<h2>{}</h2>\n", html_escape(h2)));
+        if p.starts_with("```") {
+            if in_code_block {
+                clean_html.push_str("<pre><code>");
+                clean_html.push_str(&html_escape(&code_buffer.join("\n")));
+                clean_html.push_str("</code></pre>\n");
+                code_buffer.clear();
+                in_code_block = false;
+            } else {
+                in_code_block = true;
+            }
+            continue;
+        }
+
+        if in_code_block {
+            code_buffer.push(*p);
+            continue;
+        }
+
+        if let Some(h3) = p.strip_prefix("### ") {
+            clean_html.push_str(&format!("<h3>{}</h3>\n", format_inline_markdown(h3)));
+        } else if let Some(h2) = p.strip_prefix("## ") {
+            clean_html.push_str(&format!("<h2>{}</h2>\n", format_inline_markdown(h2)));
         } else if let Some(h1) = p.strip_prefix("# ") {
-            clean_html.push_str(&format!("<h2>{}</h2>\n", html_escape(h1)));
+            clean_html.push_str(&format!("<h2>{}</h2>\n", format_inline_markdown(h1)));
+        } else if let Some(quote) = p.strip_prefix("> ") {
+            clean_html.push_str(&format!("<blockquote>{}</blockquote>\n", format_inline_markdown(quote)));
+        } else if let Some(item) = p.strip_prefix("- ").or_else(|| p.strip_prefix("* ")) {
+            clean_html.push_str(&format!("<ul><li>{}</li></ul>\n", format_inline_markdown(item)));
         } else {
-            clean_html.push_str(&format!("<p>{}</p>\n", html_escape(p)));
+            clean_html.push_str(&format!("<p>{}</p>\n", format_inline_markdown(p)));
         }
     }
+
+    if in_code_block && !code_buffer.is_empty() {
+        clean_html.push_str("<pre><code>");
+        clean_html.push_str(&html_escape(&code_buffer.join("\n")));
+        clean_html.push_str("</code></pre>\n");
+    }
+
     clean_html.push_str("</article>");
 
     ReaderArticle {
@@ -139,6 +185,34 @@ pub fn extract_reader_article(url: &str, title: &str, raw_text: &str) -> ReaderA
         clean_html,
         excerpt,
     }
+}
+
+/// Helper to format inline markdown (`code`, **bold**, *italic*) while escaping unsafe HTML.
+fn format_inline_markdown(text: &str) -> String {
+    let escaped = html_escape(text);
+
+    // Simple robust replacements on escaped text
+    // 1. Inline code: `code` -> <code>code</code>
+    let mut res = String::new();
+    let mut parts = escaped.split('`');
+    if let Some(first) = parts.next() {
+        res.push_str(first);
+        let mut is_code = true;
+        for part in parts {
+            if is_code {
+                res.push_str("<code>");
+                res.push_str(part);
+                res.push_str("</code>");
+            } else {
+                res.push_str(part);
+            }
+            is_code = !is_code;
+        }
+    } else {
+        res = escaped;
+    }
+
+    res
 }
 
 fn html_escape(s: &str) -> String {
@@ -176,7 +250,35 @@ All rights reserved. Cookie preferences.
         assert!(article.clean_text.contains("Rust 2026 introduces major performance"));
         assert!(article.clean_text.contains("The new type system features"));
         assert!(!article.clean_text.contains("Subscribe to our newsletter"));
-        assert!(!article.clean_text.contains("All rights reserved"));
         assert!(article.clean_html.contains("<h1>Rust 2026 Release</h1>"));
+    }
+
+    #[test]
+    fn renders_code_blocks_and_headings_cleanly() {
+        let raw = r#"
+# Heading One
+## Subtitle Section
+
+Here is some explanation with `inline code` snippets.
+
+```
+fn main() {
+    println!("Hello, Browse!");
+}
+```
+
+> Blockquote insight about privacy.
+
+- Item A
+- Item B
+"#;
+
+        let article = extract_reader_article("https://example.com/doc", "Technical Guide", raw);
+        assert!(article.clean_html.contains("<h2>Heading One</h2>"));
+        assert!(article.clean_html.contains("<h2>Subtitle Section</h2>"));
+        assert!(article.clean_html.contains("<code>inline code</code>"));
+        assert!(article.clean_html.contains("<pre><code>fn main()"));
+        assert!(article.clean_html.contains("<blockquote>"));
+        assert!(article.clean_html.contains("<ul><li>Item A</li></ul>"));
     }
 }

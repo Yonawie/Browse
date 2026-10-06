@@ -1453,3 +1453,106 @@ body.light-theme {
   max-width: 220px;
 }
 
+/* Reader Mode Themes & Typography */
+.reader-container.theme-paper {
+  background: #fbfbf9 !important;
+  color: #1a1a1a !important;
+}
+
+.reader-container.theme-sepia {
+  background: #f4ecd8 !important;
+  color: #5b4636 !important;
+}
+
+.reader-container.theme-dark {
+  background: #18191a !important;
+  color: #e4e6eb !important;
+}
+
+.reader-content h1 {
+  font-size: 2rem;
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.reader-byline {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.reader-date {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.reader-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.reader-content p {
+  margin-bottom: 1.25rem;
+  text-align: justify;
+}
+
+.reader-content h2 {
+  font-size: 1.45rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.reader-content h3 {
+  font-size: 1.2rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.reader-content blockquote {
+  border-left: 3px solid var(--accent-primary);
+  margin: 1.25rem 0;
+  padding-left: 1rem;
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.reader-content pre {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.reader-container.theme-dark .reader-content pre {
+  background: #242526;
+}
+
+.reader-content code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.reader-container.theme-dark .reader-content code {
+  background: #3a3b3c;
+}
+
+.reader-content ul {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+
+.reader-content li {
+  margin-bottom: 0.4rem;
+}
+

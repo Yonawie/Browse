@@ -126,7 +126,11 @@ class BrowseShell {
     this.btnCloseReader = document.getElementById('btn-close-reader');
     this.btnReaderFontDec = document.getElementById('btn-reader-font-dec');
     this.btnReaderFontInc = document.getElementById('btn-reader-font-inc');
+    this.btnReaderTheme = document.getElementById('btn-reader-theme');
+    this.btnReaderCopyMd = document.getElementById('btn-reader-copy-md');
     this.readerFontSize = 17;
+    this.readerTheme = localStorage.getItem('browse_reader_theme') || 'default';
+    this.currentArticle = null;
 
     // Site Data Cleaner
     this.btnForgetSite = document.getElementById('btn-forget-site');
@@ -344,6 +348,13 @@ class BrowseShell {
         this.readerFontSize = Math.min(32, this.readerFontSize + 2);
         if (this.readerBody) this.readerBody.style.fontSize = `${this.readerFontSize}px`;
       });
+    }
+    if (this.btnReaderTheme) {
+      this.applyReaderTheme(this.readerTheme);
+      this.btnReaderTheme.addEventListener('click', () => this.cycleReaderTheme());
+    }
+    if (this.btnReaderCopyMd) {
+      this.btnReaderCopyMd.addEventListener('click', () => this.copyReaderMarkdown());
     }
 
     // Site Data Cleaner (🗑️)
@@ -1732,6 +1743,46 @@ class BrowseShell {
     }
   }
 
+  applyReaderTheme(theme) {
+    if (!this.readerPane) return;
+    this.readerPane.classList.remove('theme-paper', 'theme-sepia', 'theme-dark');
+    if (theme === 'paper') {
+      this.readerPane.classList.add('theme-paper');
+      if (this.btnReaderTheme) this.btnReaderTheme.textContent = '📜 Paper';
+    } else if (theme === 'sepia') {
+      this.readerPane.classList.add('theme-sepia');
+      if (this.btnReaderTheme) this.btnReaderTheme.textContent = '☕ Sepia';
+    } else if (theme === 'dark') {
+      this.readerPane.classList.add('theme-dark');
+      if (this.btnReaderTheme) this.btnReaderTheme.textContent = '🌙 Dark';
+    } else {
+      if (this.btnReaderTheme) this.btnReaderTheme.textContent = '🖥️ Auto';
+    }
+  }
+
+  cycleReaderTheme() {
+    const order = ['default', 'paper', 'sepia', 'dark'];
+    const currIdx = order.indexOf(this.readerTheme);
+    const nextIdx = (currIdx + 1) % order.length;
+    this.readerTheme = order[nextIdx];
+    localStorage.setItem('browse_reader_theme', this.readerTheme);
+    this.applyReaderTheme(this.readerTheme);
+    this.showToast(`Reader theme: ${this.readerTheme}`);
+  }
+
+  copyReaderMarkdown() {
+    if (!this.currentArticle || !this.currentArticle.clean_text) {
+      this.showToast('No article text to copy');
+      return;
+    }
+    const md = `# ${this.currentArticle.title}\n\n${this.currentArticle.byline ? this.currentArticle.byline + '\n\n' : ''}${this.currentArticle.clean_text}\n\nSource: ${this.currentArticle.url}`;
+    navigator.clipboard.writeText(md).then(() => {
+      this.showToast('Article copied as Markdown! 📋');
+    }).catch(() => {
+      this.showToast('Failed to copy to clipboard');
+    });
+  }
+
   async toggleReaderMode() {
     if (!this.readerPane) return;
     if (!this.readerPane.classList.contains('hidden')) {
@@ -1745,16 +1796,20 @@ class BrowseShell {
     if (this.readerBody) {
       this.readerBody.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);">Extracting distraction-free article...</div>';
     }
+    this.applyReaderTheme(this.readerTheme);
     this.readerPane.classList.remove('hidden');
 
     try {
       const res = await this.rpc('page.reader_mode', { url, title });
       if (res && res.clean_html) {
+        this.currentArticle = res;
         this.readerBody.innerHTML = res.clean_html;
       } else {
+        this.currentArticle = null;
         this.readerBody.innerHTML = '<p style="text-align:center;color:var(--text-secondary);margin-top:40px;">Unable to extract article text from this page.</p>';
       }
     } catch (e) {
+      this.currentArticle = null;
       if (this.readerBody) {
         this.readerBody.innerHTML = `<p style="color:var(--danger-color);text-align:center;">Failed to load reader mode: ${this.escapeHtml(e.message || String(e))}</p>`;
       }

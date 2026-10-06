@@ -38,7 +38,7 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Bookmarks Manager: хранение закладок, папки, теги, импорт/экспорт Netscape HTML (Chrome/Firefox) | готово | см. git log | 20 unit (memory) + RPC `bookmarks.*` + UI Bookmarks Bar |
 | Model Catalog & Downloader: каталог рекомендованных GGUF-моделей (Qwen/Llama/BGE), инспекция статуса | готово | см. git log | 36 unit (model-gateway) + RPC `models.*` + UI 1-Click Setup |
 | Browsing History Manager: история навигаций, поиск, аналитика доменов, удаление и очистка | готово | см. git log | 21 unit (memory) + RPC `history.*` + UI History Tab |
-| Distraction-Free Reader Mode: извлечение чистого текста статьи, расчет времени чтения, UI оверлей | готово | см. git log | 36 unit (page-intelligence) + RPC `page.reader_mode` + UI Reader View |
+| Distraction-Free Reader Mode: извлечение чистого текста статьи, расчет времени чтения, темы (Paper/Sepia/Dark), копирование в Markdown, блоки кода и цитат | готово | см. git log | 39 unit (page-intelligence) + RPC `page.reader_mode` + UI Reader View |
 | Site Data Cleaner ("Forget This Site"): каскадная очистка всех следов домена (история, память, чанки) | готово | см. git log | RPC `page.forget_site` + UI Forget Site Button |
 | Download Manager & Safe File Inspector: трекинг загрузок, эвристики расширений, SHA-256 хеш | готово | см. git log | 23 unit (memory) + RPC `downloads.*` + UI Downloads Manager |
 | Cookie & Site Storage Inspector: аудит и классификация куки, маскирование значений, очистка | готово | см. git log | 38 unit (page-intelligence) + RPC `cookies.*` + UI Storage Inspector |
@@ -61,9 +61,9 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | 1-Click Local Model Downloader: фоновая потоковая загрузка GGUF моделей с отслеживанием прогресса | готово | см. git log | 29 unit (desktop) + 36 (model-gateway) + RPC `models.download`/`models.progress` + UI Прогресс-бар |
 | Memory Backup & Restore: портативный архив памяти в JSON, экспорт/импорт закладок, чтения и памяти | готово | см. git log | 31 unit (memory) + 30 unit (desktop) + RPC `memory.export`/`memory.import` + UI Backup/Restore |
 
-Итог сборки на момент записи: `cargo test --workspace --all-features` — **218 тестов, 0 падений**
+Итог сборки на момент записи: `cargo test --workspace --all-features` — **219 тестов, 0 падений**
 (agent-runtime 32 [22 unit + 10 redteam benchmark], core-types 14, engine-adapter 1, engine-cdp E2E 8, fixtures 5, memory 31,
-model-gateway 36 + 3 live, page-intelligence 38, policy 14, desktop 30); `cargo clippy --workspace --all-targets
+model-gateway 36 + 3 live, page-intelligence 39, policy 14, desktop 30); `cargo clippy --workspace --all-targets
 --all-features -- -D warnings` без единого предупреждения.
 
 ## S1 — Скелет
