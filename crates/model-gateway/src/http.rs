@@ -98,7 +98,13 @@ impl HttpTransport {
             r = r.bearer_auth(k);
         }
         let resp = r.send().await.map_err(|e| self.err(e))?;
-        resp.json().await.map_err(|e| ModelError::Protocol(e.to_string()))
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| self.err(e))?;
+        match serde_json::from_str::<Value>(&text) {
+            Ok(v) => Ok(v),
+            Err(_) if !status.is_success() => Err(self.err(format!("HTTP {status}: {}", truncate(&text, 300)))),
+            Err(e) => Err(ModelError::Protocol(format!("non-JSON response ({status}): {e}"))),
+        }
     }
 }
 
