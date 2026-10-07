@@ -347,3 +347,61 @@ async fn scope_validation_rejects_bad_scopes() {
         .unwrap();
     assert!(matches!(err, AgentError::InvalidScope(ref m) if m.contains("outside")), "{err}");
 }
+
+struct ScriptedCritic(Mutex<VecDeque<Verdict>>);
+
+#[async_trait::async_trait]
+impl Critic for ScriptedCritic {
+    async fn review(&self, _input: &CriticInput) -> Result<Verdict, AgentError> {
+        Ok(self.0.lock().unwrap().pop_front().unwrap_or(Verdict::Allow))
+    }
+}
+
+#[tokio::test]
+async fn critic_can_deny_action_and_escalate_to_confirm() {
+    let engine = Arc::new(MockEngine::new());
+    engine.add_page(
+        MockPage::simple("https://shop.example/", "Shop", "Hello").with_element(1, "button", "Details"),
+    );
+    let journal = Arc::new(InMemoryJournal::default());
+    let confirmer = Arc::new(ScriptedConfirmations::new(vec![ConfirmationAnswer::Approved]));
+    let critic = Arc::new(ScriptedCritic(Mutex::new(
+        vec![
+            Verdict::Deny { reason: "action deemed unsafe by blind critic".into() },
+            Verdict::Confirm { reason: "critic requests explicit human confirmation".into() },
+        ]
+        .into(),
+    )));
+
+    let runner = AgentRunner::new(
+        engine.clone(),
+        PolicyEngine::new(PolicyConfig { agent_enabled: true, ..Default::default() }),
+        ToolRegistry::builtin(),
+        ScriptedPlanner::new(vec![
+            call("1", "click", json!({ "ref": 1 })),
+            call("2", "click", json!({ "ref": 1 })),
+        ]),
+        critic,
+        confirmer.clone(),
+        journal,
+    );
+
+    let mut session = runner
+        .start("check details", Sensitivity::Personal, scope(), "https://shop.example/", ExecutionMode::Live)
+        .await
+        .unwrap();
+
+    // Step 1: Denied by critic
+    let out = runner.step(&mut session).await.unwrap();
+    assert!(matches!(out, StepOutcome::Denied { ref reason, ref rule, .. } if reason.contains("blind critic") && rule == "critic.deny"));
+    assert_eq!(session.consecutive_denies, 1);
+    assert_eq!(engine.actions.lock().unwrap().len(), 0);
+
+    // Step 2: Escalated to Confirm by critic -> approved by confirmer -> executed
+    let out = runner.step(&mut session).await.unwrap();
+    assert!(matches!(out, StepOutcome::Acted { .. }));
+    assert_eq!(session.consecutive_denies, 0);
+    assert_eq!(confirmer.seen.lock().unwrap().len(), 1);
+    assert_eq!(engine.actions.lock().unwrap().len(), 1);
+}
+
