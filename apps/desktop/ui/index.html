@@ -619,12 +619,15 @@
           <span class="subtitle">Save articles to read later offline. Filter unread or manage saved items.</span>
         </div>
         <div class="onboarding-body" style="padding: 12px 0;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
             <div style="display:flex; gap:6px;">
               <button class="btn-chip active" id="btn-reading-filter-all" style="font-size:11px;">All Items</button>
               <button class="btn-chip" id="btn-reading-filter-unread" style="font-size:11px;">Unread Only</button>
             </div>
             <button class="btn-primary" id="btn-add-current-to-reading" style="font-size:11px; padding:4px 10px;">+ Save Active Page</button>
+          </div>
+          <div style="margin-bottom:10px;">
+            <input type="text" id="reading-search-input" placeholder="Search saved articles by title or URL..." style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);">
           </div>
           <div id="reading-list-items" style="display:flex; flex-direction:column; gap:8px; max-height:260px; overflow-y:auto;">
             <!-- Populated dynamically -->

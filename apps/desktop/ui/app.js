@@ -239,7 +239,9 @@ class BrowseShell {
     this.readingListItems = document.getElementById('reading-list-items');
     this.btnReadingFilterAll = document.getElementById('btn-reading-filter-all');
     this.btnReadingFilterUnread = document.getElementById('btn-reading-filter-unread');
+    this.readingSearchInput = document.getElementById('reading-search-input');
     this.readingListUnreadOnly = false;
+    this.readingSearchQuery = '';
 
     this.btnNetworkMonitor = document.getElementById('btn-network-monitor');
     this.networkModal = document.getElementById('network-modal');
@@ -561,6 +563,12 @@ class BrowseShell {
         this.readingListUnreadOnly = true;
         this.btnReadingFilterUnread.classList.add('active');
         if (this.btnReadingFilterAll) this.btnReadingFilterAll.classList.remove('active');
+        this.fetchReadingList();
+      });
+    }
+    if (this.readingSearchInput) {
+      this.readingSearchInput.addEventListener('input', () => {
+        this.readingSearchQuery = this.readingSearchInput.value.trim().toLowerCase();
         this.fetchReadingList();
       });
     }
@@ -2870,13 +2878,24 @@ class BrowseShell {
   async fetchReadingList() {
     if (!this.readingListItems) return;
     try {
-      const items = await this.rpc('reading_list.list', {
+      let items = await this.rpc('reading_list.list', {
         profile: this.currentProfile || 'default',
         unread_only: this.readingListUnreadOnly
       }) || [];
 
+      if (this.readingSearchQuery) {
+        items = items.filter(it =>
+          (it.title && it.title.toLowerCase().includes(this.readingSearchQuery)) ||
+          (it.url && it.url.toLowerCase().includes(this.readingSearchQuery)) ||
+          (it.excerpt && it.excerpt.toLowerCase().includes(this.readingSearchQuery))
+        );
+      }
+
       if (items.length === 0) {
-        this.readingListItems.innerHTML = '<span class="empty-hint" style="font-size:12px;padding:8px 0;">No articles in reading list. Click "+ Save Active Page" to add one.</span>';
+        const msg = this.readingSearchQuery
+          ? `No saved articles matching "${this.readingSearchQuery}".`
+          : 'No articles in reading list. Click "+ Save Active Page" to add one.';
+        this.readingListItems.innerHTML = `<span class="empty-hint" style="font-size:12px;padding:8px 0;">${this.escapeHtml(msg)}</span>`;
         return;
       }
 

@@ -56,7 +56,7 @@ Chrome 148 (headless), Rust stable 1.98. Референсная машина (Wi
 | Smart Tab Deduplication: очистка UTM-трекеров, канонизация URL, дедупликация вкладок | готово | см. git log | RPC `tabs.dedup` + Command Palette + Tab Hygiene modal |
 | AI Prompt Templates: библиотека быстрых промптов ("Pricing Table", "Code", "Fact Check", "Takeaways") | готово | см. git log | 29 unit (memory) + RPC `prompts.*` + динамические чипы ИИ |
 | User Scripts & Custom Styles: локальные расширения JS/CSS с паттернами доменов (*, domain) | готово | см. git log | RPC `userscripts.*` + UI User Scripts Modal |
-| Offline Reading List ("Read It Later"): отложенное чтение статей, фильтр прочитанного, время чтения | готово | см. git log | 30 unit (memory) + RPC `reading_list.*` + UI Reading List Modal |
+| Offline Reading List ("Read It Later"): отложенное чтение статей, живой поиск по заголовку/URL, фильтр прочитанного, время чтения | готово | см. git log | 30 unit (memory) + RPC `reading_list.*` + UI Reading List Modal |
 | Live Network Inspector: инспекция HTTP-трафика, размеров, задержек и заблокированных трекеров | готово | см. git log | 28 unit (desktop) + RPC `network.*` + UI Network Inspector Modal |
 | 1-Click Local Model Downloader: фоновая потоковая загрузка GGUF моделей с отслеживанием прогресса | готово | см. git log | 29 unit (desktop) + 36 (model-gateway) + RPC `models.download`/`models.progress` + UI Прогресс-бар |
 | Memory Backup & Restore: портативный архив памяти в JSON, экспорт/импорт закладок, чтения и памяти | готово | см. git log | 31 unit (memory) + 30 unit (desktop) + RPC `memory.export`/`memory.import` + UI Backup/Restore |
