@@ -1,6 +1,7 @@
 //! Vertical Page Intelligence slice: observe a real page and ask the configured
 //! model to summarize, answer a question, or translate its readable content.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -62,6 +63,13 @@ pub async fn page_command(args: &[String]) -> Result<(), Box<dyn std::error::Err
         let (stream, route) = configured.gateway.chat_stream(action.purpose(), &request).await?;
         eprintln!("route: {} ({:?})", route.provider, route.locality);
         let response = write_response(stream, &mut std::io::stdout(), Duration::from_secs(60)).await?;
+        let citations = check_citations(&response.content, &observation.content);
+        if !citations.unknown.is_empty() {
+            eprintln!("warning: answer cites missing page fragments: {}", citations.unknown.join(", "));
+        }
+        if citations.valid == 0 && !matches!(action, PageAction::Translate(_)) {
+            eprintln!("warning: answer has no references to observed page fragments");
+        }
         eprintln!(
             "model={} input_tokens={} output_tokens={}",
             response.model, response.usage.prompt_tokens, response.usage.completion_tokens
@@ -76,6 +84,32 @@ pub async fn page_command(args: &[String]) -> Result<(), Box<dyn std::error::Err
     result?;
     close_result?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CitationCheck {
+    valid: usize,
+    unknown: Vec<String>,
+}
+
+fn check_citations(answer: &str, chunks: &[ContentChunk]) -> CitationCheck {
+    let known: BTreeSet<&str> = chunks.iter().map(|chunk| chunk.obs_id.as_str()).collect();
+    let mut valid = BTreeSet::new();
+    let mut unknown = BTreeSet::new();
+    for (start, _) in answer.match_indices("[c") {
+        let suffix = &answer.as_bytes()[start + 2..];
+        let digits = suffix.iter().take_while(|byte| byte.is_ascii_digit()).count();
+        if digits == 0 || suffix.get(digits) != Some(&b']') {
+            continue;
+        }
+        let id = &answer[start + 1..start + 2 + digits];
+        if known.contains(id) {
+            valid.insert(id);
+        } else {
+            unknown.insert(id.to_string());
+        }
+    }
+    CitationCheck { valid: valid.len(), unknown: unknown.into_iter().collect() }
 }
 
 async fn write_response(
@@ -297,5 +331,15 @@ mod tests {
             assert!(parse_args(&["https://example.com".into(), action.into(), "  ".into()]).is_err());
         }
         assert!(build_context(&[chunk("c0", " \n ")]).is_err());
+    }
+
+    #[test]
+    fn citation_check_distinguishes_observed_and_invented_ids() {
+        let chunks = [chunk("c0", "Solar roofs"), chunk("c12", "Funding")];
+        assert_eq!(
+            check_citations("Факт [c0], повтор [c0], ещё [c12], выдумка [c99], [cat].", &chunks),
+            CitationCheck { valid: 2, unknown: vec!["c99".into()] }
+        );
+        assert_eq!(check_citations("Нет ссылок", &chunks).valid, 0);
     }
 }

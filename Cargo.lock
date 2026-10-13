@@ -134,9 +134,11 @@ version = "0.1.0"
 dependencies = [
  "agent-runtime",
  "async-trait",
+ "axum",
  "core-types",
  "engine-adapter",
  "engine-cdp",
+ "fixtures",
  "futures-util",
  "memory",
  "model-gateway",

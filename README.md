@@ -37,12 +37,16 @@ cargo run -p browse-desktop -- page https://example.com translate Russian
 ```
 
 The command launches an isolated headless Chromium profile, extracts a locally budgeted observation, and streams the
-answer, asking the model to cite source ids such as `[c0]` (citations are not automatically verified).
+answer, asking the model to cite source ids such as `[c0]`. The CLI warns when a cited id is absent
+from the observed page or when a summary or answer has no citations. It does not verify that a cited
+fragment supports the model's claim.
 Page content, title, and URL are encoded as untrusted JSON data in the model prompt; this is not a guarantee against prompt injection.
 Private pages can only use a local provider. Public-page summaries may use a configured cloud endpoint.
 Free-form questions and translation requests are classified at least Personal and do not opt into cloud routing,
 so these commands require a local provider. Live inference requires a separately configured model server;
 tests that skip without one do not validate model answer quality.
+An end-to-end test uses Chromium, a fixture article, and a deterministic local model-compatible
+server to exercise all three commands without downloading a model.
 
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
