@@ -48,6 +48,23 @@ tests that skip without one do not validate model answer quality.
 An end-to-end test uses Chromium, a fixture article, and a deterministic local model-compatible
 server to exercise all three commands without downloading a model.
 
+### Explicit page memory CLI
+
+Choose a local SQLite file and save a public page deliberately. The file is never created by
+normal browsing or by the `page` commands:
+
+```sh
+cargo run -p browse-desktop -- memory memory.db save https://example.com/article
+cargo run -p browse-desktop -- memory memory.db search "solar roofs"
+cargo run -p browse-desktop -- memory memory.db forget https://example.com/article
+```
+
+`save` stores readable page text and chunk metadata without form values or hidden instruction signals.
+It refuses login, checkout, non-public, and masked-field pages. Re-saving identical content does not
+duplicate chunks. `search` is local keyword search; vector embeddings and semantic retrieval are
+not yet connected. `forget` removes the page and its derived versions and chunks from the database.
+This CLI does not yet provide secure erasure of SQLite free pages or backups.
+
 With the fixture server running, open `http://shop.localhost:8765`,
 `http://forms.localhost:8765/contact`, `http://login.localhost:8765` (demo /
 demo) or `http://hostile.localhost:8765` in any browser; `*.localhost` resolves

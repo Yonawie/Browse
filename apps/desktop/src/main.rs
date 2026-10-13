@@ -11,9 +11,11 @@
 //! browse-desktop schema-check         apply schema/memory.sql to an in-memory DB and print table counts
 //! browse-desktop models               show model routing and run a streamed smoke prompt (see models.rs)
 //! browse-desktop page <url> summarize open a real page and summarize it with source citations
+//! browse-desktop memory <db-path> save|search|forget  explicit local page memory
 //! ```
 
 mod journal;
+mod memory_cli;
 mod models;
 mod page;
 
@@ -41,10 +43,11 @@ async fn main() {
         Some("demo") => demo(args.iter().any(|a| a == "--interactive"), args.iter().any(|a| a == "--dry-run")).await,
         Some("schema-check") => schema_check(),
         Some("models") => models::models_command().await,
+        Some("memory") => memory_cli::memory_command(&args[1..]).await,
         Some("page") => page::page_command(&args[1..]).await,
         _ => {
             eprintln!(
-                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <question> | translate <language>>>"
+                "usage: browse-desktop <demo [--interactive] [--dry-run] | schema-check | models | page <url> <summarize | ask <question> | translate <language>> | memory <db-path> <save <url> | search <query> | forget <url>>>"
             );
             Ok(())
         }

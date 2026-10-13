@@ -26,3 +26,4 @@ futures-util.workspace = true
 [dev-dependencies]
 axum.workspace = true
 fixtures = { path = "../../crates/fixtures" }
+tempfile.workspace = true
